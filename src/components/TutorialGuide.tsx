@@ -6,12 +6,14 @@ export type TutorialStep = 1 | 2 | 3 | 4;
 
 interface TutorialGuideProps {
   step: TutorialStep;
+  onPrevStep: () => void;
   onAdvanceStep: () => void;
   onDismiss: () => void;
 }
 
 export const TutorialGuide: React.FC<TutorialGuideProps> = ({
   step,
+  onPrevStep,
   onAdvanceStep,
   onDismiss,
 }) => {
@@ -24,8 +26,6 @@ export const TutorialGuide: React.FC<TutorialGuideProps> = ({
       ? '報告とニュースの矛盾を「裏取り」'
       : '目標：14日間で ¥2,500万 稼いで逃げ切れ';
 
-  const actionLabel =
-    step === 3 ? '次へ' : step === 4 ? '了解・自由に運営する' : undefined;
   const isFinal = step === 4;
 
   return (
@@ -59,10 +59,10 @@ export const TutorialGuide: React.FC<TutorialGuideProps> = ({
                 type="button"
                 className="tutorial-dismiss-btn"
                 onClick={onDismiss}
-                title="ガイドを非表示にする"
+                title="ガイドを閉じる（いつでも再表示可能）"
               >
                 <CloseIcon size={11} />
-                <span>ガイド非表示</span>
+                <span>閉じる</span>
               </button>
             </div>
           </div>
@@ -98,18 +98,25 @@ export const TutorialGuide: React.FC<TutorialGuideProps> = ({
             )}
           </p>
 
-          {actionLabel && (
-            <div className="tutorial-cta-row">
+          <div className="tutorial-cta-row">
+            {step > 1 && (
               <button
                 type="button"
-                className={`btn-noir ${isFinal ? 'btn-amber' : 'btn-teal'} tutorial-next-btn`}
-                onClick={isFinal ? onDismiss : onAdvanceStep}
+                className="tutorial-dismiss-btn"
+                onClick={onPrevStep}
               >
-                {isFinal ? <CheckIcon size={14} /> : <ArrowRightIcon size={14} />}
-                <span>{actionLabel}</span>
+                <span>← 前へ</span>
               </button>
-            </div>
-          )}
+            )}
+            <button
+              type="button"
+              className={`btn-noir ${isFinal ? 'btn-amber' : 'btn-teal'} tutorial-next-btn`}
+              onClick={isFinal ? onDismiss : onAdvanceStep}
+            >
+              {isFinal ? <CheckIcon size={14} /> : <ArrowRightIcon size={14} />}
+              <span>{isFinal ? '了解・自由に運営する' : '次のステップ'}</span>
+            </button>
+          </div>
         </div>
       </div>
     </aside>

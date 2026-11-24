@@ -284,15 +284,43 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [activeDrawer, selectedDistrict, gameState.phase, howToPlayOpen]);
 
+  const lastTutorialStepRef = useRef<TutorialStep>(1);
+
   const dismissTutorial = useCallback(() => {
     soundEngine.playClick();
+    if (tutorialStep !== null) {
+      lastTutorialStepRef.current = tutorialStep;
+    }
     setTutorialStep(null);
     try {
       window.localStorage.setItem(TUTORIAL_DONE_STORAGE_KEY, '1');
     } catch {
       // Ignore storage failures
     }
-  }, []);
+  }, [tutorialStep]);
+
+  const reopenTutorial = useCallback(() => {
+    soundEngine.playClick();
+    try {
+      window.localStorage.removeItem(TUTORIAL_DONE_STORAGE_KEY);
+    } catch {
+      // Ignore storage failures
+    }
+    // Choose a helpful step matching current game progress if previously finished
+    const hasActiveOrDoneOp = gameState.operations.some(
+      (o) => o.status === 'active' || o.status === 'completed' || o.status === 'failed' || o.status === 'busted'
+    );
+    const hasReports = gameState.messages.some((m) => m.type === 'report');
+    const inferredStep: TutorialStep = !hasActiveOrDoneOp
+      ? 1
+      : gameState.day === 1 && !hasReports
+      ? 2
+      : hasReports
+      ? 3
+      : lastTutorialStepRef.current;
+    setTutorialStep(inferredStep);
+    setHowToPlayOpen(false);
+  }, [gameState.operations, gameState.messages, gameState.day]);
 
   // Auto-advance Tutorial Step 2 -> Step 3 when entering evening or Day 2
   useEffect(() => {
@@ -925,6 +953,12 @@ export default function App() {
               activeDrawer !== 'network' && (
                 <TutorialGuide
                   step={tutorialStep}
+                  onPrevStep={() => {
+                    soundEngine.playClick();
+                    setTutorialStep((prev) =>
+                      prev === null ? 1 : prev > 1 ? ((prev - 1) as TutorialStep) : 1
+                    );
+                  }}
                   onAdvanceStep={() => {
                     soundEngine.playClick();
                     setTutorialStep((prev) =>
@@ -933,6 +967,21 @@ export default function App() {
                   }}
                   onDismiss={dismissTutorial}
                 />
+              )}
+
+            {tutorialStep === null &&
+              gameState.phase === 'playing' &&
+              activeDrawer === null && (
+                <button
+                  type="button"
+                  className="tutorial-reopen-chip interactive"
+                  onClick={reopenTutorial}
+                  data-testid="tutorial-reopen-chip"
+                  title="ミサキの操作ナビを再表示"
+                >
+                  <span className="tutorial-comms-pulse" aria-hidden="true" />
+                  <span>ミサキの操作ナビを表示</span>
+                </button>
               )}
 
             <div className="hud-bottom">
@@ -1037,6 +1086,11 @@ export default function App() {
             soundEngine.playClick();
             setHowToPlayOpen(false);
           }}
+          onReopenTutorial={
+            gameState.phase !== 'title' && gameState.phase !== 'ended' && tutorialStep === null
+              ? reopenTutorial
+              : undefined
+          }
         />
       )}
 

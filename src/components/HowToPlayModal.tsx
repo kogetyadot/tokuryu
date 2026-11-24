@@ -11,9 +11,13 @@ import {
 
 interface HowToPlayModalProps {
   onClose: () => void;
+  onReopenTutorial?: () => void;
 }
 
-export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
+export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({
+  onClose,
+  onReopenTutorial,
+}) => {
   return (
     <div
       className="modal-backdrop howto-backdrop"
@@ -159,6 +163,16 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
         </div>
 
         <div className="drawer-footer howto-modal-footer">
+          {onReopenTutorial && (
+            <button
+              type="button"
+              className="btn-noir btn-teal howto-reopen-guide-btn"
+              onClick={onReopenTutorial}
+              data-testid="howto-reopen-tutorial"
+            >
+              <span>ミサキの操作ナビを再表示</span>
+            </button>
+          )}
           <button
             type="button"
             className="btn-noir btn-amber howto-close-cta"

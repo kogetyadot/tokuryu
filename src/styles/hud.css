@@ -3146,3 +3146,41 @@
     font-size: 15.5px;
   }
 }
+
+
+/* Compact Reopen Misaki Guide Chip */
+.tutorial-reopen-chip {
+  align-self: flex-start;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  min-height: 32px;
+  background: rgba(8, 12, 18, 0.88);
+  border: 1px solid rgba(46, 196, 182, 0.45);
+  color: var(--teal-bright);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  clip-path: var(--cut-sm);
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.tutorial-reopen-chip:hover {
+  border-color: var(--teal-bright);
+  background: rgba(46, 196, 182, 0.16);
+}
+
+.howto-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.howto-reopen-guide-btn {
+  min-height: 42px;
+}

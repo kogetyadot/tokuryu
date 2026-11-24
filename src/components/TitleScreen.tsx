@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { soundEngine } from '../audio/SoundEngine';
 import { DOCTRINES, formatYen } from '../sim/districts';
 import type { DoctrineId } from '../types/game';
+import { Term } from './GlossaryTerm';
 import {
   ArrowRightIcon,
   HelpIcon,
@@ -418,12 +419,19 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             />
           </div>
 
-          <div className="spotlight-tradeoff-note">{activeCfg.tradeoff}</div>
+          <div className="spotlight-tradeoff-note">
+            <span>{activeCfg.tradeoff}</span>
+            <span className="inline-term-strip" style={{ marginLeft: 8 }}>
+              <Term id="info_fog">情報の霧</Term>
+              <Term id="t3_trace">T3捜査網</Term>
+              <Term id="audit">裏取り調査</Term>
+            </span>
+          </div>
 
           <div className="spotlight-goal-callout">
             <span className="goal-badge mono-num">MISSION OBJECTIVE</span>
             <span className="goal-text">
-              目標：14日以内に裏資金 <strong>¥2,500万</strong> を築き逃げ切る
+              目標：14日以内に<Term id="cash">裏資金</Term> <strong>¥2,500万</strong> を築き逃げ切る
             </span>
           </div>
 

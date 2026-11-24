@@ -1,11 +1,11 @@
 import React from 'react';
+import { Term } from './GlossaryTerm';
 import {
   AnonMaskIcon,
-  AuditSearchIcon,
+  ArrowRightIcon,
   BriefcaseOpIcon,
   BurnerPhoneIcon,
   CloseIcon,
-  ExitDoorIcon,
   SirenIcon,
 } from './Icons';
 
@@ -32,9 +32,7 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
             <AnonMaskIcon size={18} />
             <div>
               <h2 className="drawer-title">遊び方ガイド</h2>
-              <div className="drawer-subtitle">
-                FIELD MANUAL // 匿名・流動型組織の運営手引き
-              </div>
+              <div className="drawer-subtitle">FIELD MANUAL // 遊び方</div>
             </div>
           </div>
           <button
@@ -48,97 +46,113 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
         </div>
 
         <div className="drawer-body howto-modal-body">
-          <div className="howto-panels-grid">
-            {/* Panel 01 */}
-            <section className="howto-panel">
-              <div className="howto-panel-head">
-                <span className="howto-step-num mono-num">01</span>
-                <span className="howto-step-icon amber">
-                  <BriefcaseOpIcon size={17} />
+          {/* Big Picture Hero — Instantly tells you WHAT this game is in 3 seconds */}
+          <section className="howto-hero-box">
+            <div className="howto-hero-kicker mono-num">OVERVIEW // 何をするゲーム？</div>
+            <h3 className="howto-hero-lead">
+              警察に捕まる前に、部下を操って
+              <span className="howto-highlight">14日間で ¥2,500万</span>
+              稼いで逃げ切るゲームです。
+            </h3>
+            <div className="howto-winloss-row">
+              <div className="howto-wl-chip win">
+                <span className="howto-wl-tag">勝利</span>
+                <span>
+                  <Term id="cash">裏資金</Term> ¥2,500万で完全逃亡（¥1,400万で早期
+                  <Term id="quiet_exit">雲隠れ</Term>も可）
                 </span>
-                <h3 className="howto-panel-title">案件を回して裏資金を稼ぐ</h3>
               </div>
-
-              <ul className="howto-bullet-list">
-                <li>
-                  街に浮かぶ <strong>案件ピン</strong> か右下の{' '}
-                  <strong>案件一覧</strong> からシノギを選択。
-                </li>
-                <li>
-                  <span className="howto-tag amber">直轄実行</span>
-                  100%正確な報告だが摘発時に <strong>T3捜査網</strong> が急上昇。
-                </li>
-                <li>
-                  <span className="howto-tag teal">指示役へ委任</span>
-                  捜査線を大幅遮断できるが、配下に <strong>情報の霧</strong> がかかり{' '}
-                  <strong>中抜き・隠蔽</strong> の危険が生じる。
-                </li>
-              </ul>
-            </section>
-
-            {/* Panel 02 */}
-            <section className="howto-panel">
-              <div className="howto-panel-head">
-                <span className="howto-step-num mono-num">02</span>
-                <span className="howto-step-icon teal">
-                  <BurnerPhoneIcon size={17} />
+              <div className="howto-wl-chip lose">
+                <span className="howto-wl-tag">
+                  <SirenIcon size={11} />
+                  敗北
                 </span>
-                <h3 className="howto-panel-title">
-                  ニュースと報告の矛盾を「裏取り」
-                </h3>
-              </div>
-
-              <ul className="howto-bullet-list">
-                <li>
-                  案件完了後、<strong>暗号端末</strong> に届く報告と画面下の{' '}
-                  <strong>海湾ニュース</strong> を見比べよう。
-                </li>
-                <li>
-                  「異常なし」の報告なのに警察通報の報道がある／金額が合わない時は{' '}
-                  <span className="howto-inline-icon">
-                    <AuditSearchIcon size={13} />
-                    <strong>裏取り調査</strong>
-                  </span>{' '}
-                  を実行！
-                </li>
-                <li>
-                  虚偽を暴けば <strong>資金回収・詰問・尻尾切り</strong> ができる。
-                </li>
-              </ul>
-            </section>
-
-            {/* Panel 03 */}
-            <section className="howto-panel">
-              <div className="howto-panel-head">
-                <span className="howto-step-num mono-num">03</span>
-                <span className="howto-step-icon crimson">
-                  <ExitDoorIcon size={17} />
+                <span>
+                  <Term id="t3_trace">T3捜査網</Term> 100% ／{' '}
+                  <Term id="control">統制力</Term> 崩壊 ／ 資金ショート
                 </span>
-                <h3 className="howto-panel-title">14日間の決着（勝利と破滅）</h3>
               </div>
+            </div>
+          </section>
 
-              <ul className="howto-bullet-list">
-                <li>
-                  <span className="howto-tag teal">勝利</span>
-                  14日以内に裏資金 <strong>¥2,500万</strong> で完全逃亡（
-                  <strong>¥1,400万</strong> で早期 <strong>「雲隠れ」</strong> も可能）。
-                </li>
-                <li>
-                  <span className="howto-tag crimson">
-                    <SirenIcon size={12} />
-                    破滅
-                  </span>
-                  <strong>T3捜査網 100%</strong>（一斉摘発）、
-                  <strong>統制力崩壊</strong>（内部下剋上）、
-                  <strong>資金ショート</strong>（空中分解）。
-                </li>
-              </ul>
-            </section>
+          {/* Visual 3-Step Daily Flow Strip */}
+          <section className="howto-flow-section">
+            <div className="howto-section-caption mono-num">
+              DAILY LOOP // 1日の流れ（これを14日間くり返す）
+            </div>
+            <div className="howto-flow-strip">
+              <div className="howto-flow-card">
+                <div className="howto-flow-num mono-num">STEP 1</div>
+                <div className="howto-flow-title">
+                  <BriefcaseOpIcon size={15} />
+                  <span>案件に人を送る</span>
+                </div>
+                <p className="howto-flow-desc">
+                  街のピンか「案件一覧」からシノギを選び、誰に任せるか決める。
+                </p>
+              </div>
+              <div className="howto-flow-arrow" aria-hidden="true">
+                <ArrowRightIcon size={16} />
+              </div>
+              <div className="howto-flow-card">
+                <div className="howto-flow-num mono-num">STEP 2</div>
+                <div className="howto-flow-title">
+                  <BurnerPhoneIcon size={15} />
+                  <span>報告とニュースを見る</span>
+                </div>
+                <p className="howto-flow-desc">
+                  時間が進むと完了。暗号端末に部下の報告、画面下に海湾ニュースが届く。
+                </p>
+              </div>
+              <div className="howto-flow-arrow" aria-hidden="true">
+                <ArrowRightIcon size={16} />
+              </div>
+              <div className="howto-flow-card">
+                <div className="howto-flow-num mono-num">STEP 3</div>
+                <div className="howto-flow-title">
+                  <AnonMaskIcon size={15} />
+                  <span>嘘を暴き、組織を守る</span>
+                </div>
+                <p className="howto-flow-desc">
+                  ニュースと報告が矛盾したら <Term id="audit">裏取り調査</Term>
+                  。資金回収や <Term id="cutoff">尻尾切り</Term> で立て直す。
+                </p>
+              </div>
+            </div>
+          </section>
+
+          {/* The Core Dilemma — Direct vs Delegate */}
+          <section className="howto-dilemma-grid">
+            <div className="howto-dilemma-card direct">
+              <div className="howto-dilemma-head">
+                <Term id="direct_exec">直轄実行</Term>
+                <span className="howto-dilemma-sub">自分で直接指示</span>
+              </div>
+              <p>
+                報告は100%正確で中抜きなし。ただし失敗・摘発されると{' '}
+                <Term id="t3_trace">T3捜査網</Term> が一気に跳ね上がる。
+              </p>
+            </div>
+            <div className="howto-dilemma-card delegate">
+              <div className="howto-dilemma-head">
+                <Term id="delegate_exec">指示役へ委任</Term>
+                <span className="howto-dilemma-sub">幹部経由で実行</span>
+              </div>
+              <p>
+                警察の捜査線を大幅に遮断できる。しかし <Term id="info_fog">情報の霧</Term>{' '}
+                がかかり、幹部による中抜きやトラブル隠蔽が紛れ込む。
+              </p>
+            </div>
+          </section>
+
+          <div className="howto-glossary-hint">
+            点線つきの用語（<Term id="t3_trace">T3捜査網</Term> や{' '}
+            <Term id="info_fog">情報の霧</Term> など）はゲーム中いつでもタップで解説が開きます。
           </div>
 
           <div className="howto-controls-bar mono-num">
             <span>ドラッグ：街の視点回転</span>
-            <span>ホイール / ピンチ：拡大縮小</span>
+            <span>ピンチ / ホイール：拡大縮小</span>
             <span className="hide-mobile">Space：一時停止</span>
             <span className="hide-mobile">1 / 2：速度切替</span>
           </div>
@@ -150,7 +164,7 @@ export const HowToPlayModal: React.FC<HowToPlayModalProps> = ({ onClose }) => {
             className="btn-noir btn-amber howto-close-cta"
             onClick={onClose}
           >
-            <span>閉じる / 作戦に戻る</span>
+            <span>理解した・作戦へ進む</span>
           </button>
         </div>
       </div>

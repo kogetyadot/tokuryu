@@ -1,6 +1,7 @@
 import React from 'react';
 import { formatYen } from '../sim/districts';
 import type { GameState } from '../types/game';
+import { useGlossary } from './GlossaryTerm';
 import {
   ControlScaleIcon,
   ExitDoorIcon,
@@ -52,6 +53,7 @@ export const TopHud: React.FC<TopHudProps> = ({
   onToggleMute,
   onTriggerQuietExit,
 }) => {
+  const { openTerm } = useGlossary();
   const cashPct = Math.min(100, Math.max(0, (state.cash / state.targetCash) * 100));
   const traceDanger = state.policeTrace >= 65;
   const controlLow = state.control <= 30;
@@ -170,14 +172,20 @@ export const TopHud: React.FC<TopHudProps> = ({
         </div>
       </div>
 
-      {/* Row 2 on Mobile / Center Cluster on Desktop: 4 Core Meters */}
+      {/* Row 2 on Mobile / Center Cluster on Desktop: 4 Core Tappable Meters */}
       <div className="hud-meters-cluster">
         {/* 裏資金 */}
-        <div className="hud-meter" title={`目標: ${formatYen(state.targetCash)}`}>
+        <button
+          type="button"
+          className="hud-meter hud-meter-btn"
+          onClick={() => openTerm('cash')}
+          title={`裏資金の解説を見る（目標: ${formatYen(state.targetCash)}）`}
+        >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
               <YenIcon size={12} />
               <span>裏資金</span>
+              <span className="hud-meter-q" aria-hidden="true">?</span>
             </span>
             <span
               className="hud-meter-val"
@@ -193,14 +201,20 @@ export const TopHud: React.FC<TopHudProps> = ({
               style={{ width: `${cashPct}%`, background: 'var(--amber)' }}
             />
           </div>
-        </div>
+        </button>
 
         {/* 統制力 */}
-        <div className={`hud-meter${controlLow ? ' danger-pulse' : ''}`}>
+        <button
+          type="button"
+          className={`hud-meter hud-meter-btn${controlLow ? ' danger-pulse' : ''}`}
+          onClick={() => openTerm('control')}
+          title="統制力の解説を見る"
+        >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
               <ControlScaleIcon size={12} />
               <span>統制力</span>
+              <span className="hud-meter-q" aria-hidden="true">?</span>
             </span>
             <span
               className="hud-meter-val"
@@ -218,14 +232,20 @@ export const TopHud: React.FC<TopHudProps> = ({
               }}
             />
           </div>
-        </div>
+        </button>
 
         {/* T3捜査網 */}
-        <div className={`hud-meter${traceDanger ? ' danger-pulse' : ''}`}>
+        <button
+          type="button"
+          className={`hud-meter hud-meter-btn${traceDanger ? ' danger-pulse' : ''}`}
+          onClick={() => openTerm('t3_trace')}
+          title="T3捜査網の解説を見る"
+        >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
               <SirenIcon size={12} />
               <span>T3捜査網</span>
+              <span className="hud-meter-q" aria-hidden="true">?</span>
             </span>
             <span
               className="hud-meter-val"
@@ -243,14 +263,20 @@ export const TopHud: React.FC<TopHudProps> = ({
               }}
             />
           </div>
-        </div>
+        </button>
 
         {/* 社会被害 */}
-        <div className="hud-meter">
+        <button
+          type="button"
+          className="hud-meter hud-meter-btn"
+          onClick={() => openTerm('city_harm')}
+          title="社会被害の解説を見る"
+        >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
               <HarmSkullIcon size={12} />
               <span>社会被害</span>
+              <span className="hud-meter-q" aria-hidden="true">?</span>
             </span>
             <span
               className="hud-meter-val"
@@ -268,7 +294,7 @@ export const TopHud: React.FC<TopHudProps> = ({
               }}
             />
           </div>
-        </div>
+        </button>
       </div>
     </header>
   );

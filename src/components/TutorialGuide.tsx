@@ -1,4 +1,5 @@
 import React from 'react';
+import { Term } from './GlossaryTerm';
 import { ArrowRightIcon, CheckIcon, CloseIcon } from './Icons';
 
 export type TutorialStep = 1 | 2 | 3 | 4;
@@ -9,42 +10,23 @@ interface TutorialGuideProps {
   onDismiss: () => void;
 }
 
-const STEP_COPY: Record<
-  TutorialStep,
-  {
-    title: string;
-    body: string;
-    actionLabel?: string;
-    isFinal?: boolean;
-  }
-> = {
-  1: {
-    title: '最初の案件を実行しよう',
-    body: '街に浮かぶ黄金の「案件ピン」か、右下の「案件一覧」を押して1件動かして。氷室に「委任」すると捜査線を抑えられるわ。',
-  },
-  2: {
-    title: '時間を進めて夜の清算へ',
-    body: '現場が動き出したわ！上の「2×」で早送りするか、「夜へ進む」で今夜の決算と海湾ニュースを確認しましょう。',
-  },
-  3: {
-    title: '暗号端末で報告とニュースを照合',
-    body: '氷室などから報告が届いたら「暗号端末」を開いて。海湾ニュースと矛盾があれば「裏取り調査」で嘘を暴けるわ！',
-    actionLabel: '次へ',
-  },
-  4: {
-    title: '目標：14日以内に ¥2,500万 で逃げ切れ',
-    body: '捜査網100%で一斉摘発、資金や統制が尽きても終了よ。¥1,400万を超えたら早期「雲隠れ」も選べるわ。健闘を祈る！',
-    actionLabel: '了解・自由に運営する',
-    isFinal: true,
-  },
-};
-
 export const TutorialGuide: React.FC<TutorialGuideProps> = ({
   step,
   onAdvanceStep,
   onDismiss,
 }) => {
-  const info = STEP_COPY[step];
+  const title =
+    step === 1
+      ? 'まずは1件、シノギに人を送ろう'
+      : step === 2
+      ? '時間を進めて「夜の清算」へ'
+      : step === 3
+      ? '報告とニュースの矛盾を「裏取り」'
+      : '目標：14日間で ¥2,500万 稼いで逃げ切れ';
+
+  const actionLabel =
+    step === 3 ? '次へ' : step === 4 ? '了解・自由に運営する' : undefined;
+  const isFinal = step === 4;
 
   return (
     <aside
@@ -85,18 +67,46 @@ export const TutorialGuide: React.FC<TutorialGuideProps> = ({
             </div>
           </div>
 
-          <h4 className="tutorial-title">{info.title}</h4>
-          <p className="tutorial-body">{info.body}</p>
+          <h4 className="tutorial-title">{title}</h4>
+          <p className="tutorial-body">
+            {step === 1 && (
+              <>
+                街のピンか右下の「案件一覧」から1件実行して。氷室に
+                <Term id="delegate_exec">指示役へ委任</Term>
+                すると<Term id="t3_trace">T3捜査網</Term>を抑えられるわ。
+              </>
+            )}
+            {step === 2 && (
+              <>
+                現場が動き出したわ！上の「2×」で早送りするか、「夜へ進む」で今夜の決算と海湾ニュースを確認しましょう。
+              </>
+            )}
+            {step === 3 && (
+              <>
+                報告が届いたら「暗号端末」を開いて。海湾ニュースと食い違いがあれば
+                <Term id="audit">裏取り調査</Term>
+                で中抜きや隠蔽を暴けるわ！
+              </>
+            )}
+            {step === 4 && (
+              <>
+                <Term id="t3_trace">T3捜査網</Term>100%で逮捕、資金や
+                <Term id="control">統制力</Term>
+                が尽きても破滅よ。¥1,400万を超えたら早期
+                <Term id="quiet_exit">雲隠れ</Term>も選べるわ！
+              </>
+            )}
+          </p>
 
-          {info.actionLabel && (
+          {actionLabel && (
             <div className="tutorial-cta-row">
               <button
                 type="button"
-                className={`btn-noir ${info.isFinal ? 'btn-amber' : 'btn-teal'} tutorial-next-btn`}
-                onClick={info.isFinal ? onDismiss : onAdvanceStep}
+                className={`btn-noir ${isFinal ? 'btn-amber' : 'btn-teal'} tutorial-next-btn`}
+                onClick={isFinal ? onDismiss : onAdvanceStep}
               >
-                {info.isFinal ? <CheckIcon size={14} /> : <ArrowRightIcon size={14} />}
-                <span>{info.actionLabel}</span>
+                {isFinal ? <CheckIcon size={14} /> : <ArrowRightIcon size={14} />}
+                <span>{actionLabel}</span>
               </button>
             </div>
           )}

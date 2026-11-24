@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { formatYen } from '../sim/districts';
 import { getDirectSlotUsage } from '../sim/engine';
+import { Term } from './GlossaryTerm';
 import type {
   Character,
   CharacterStatus,
@@ -157,8 +158,8 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
           }}
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <span style={{ fontSize: 12, fontWeight: 700 }}>
-              直轄キャパシティ:{' '}
+            <span style={{ fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <Term id="direct_cap">直轄キャパシティ</Term>
               <span
                 className="mono-num"
                 style={{
@@ -172,7 +173,7 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
               </span>
             </span>
             <span style={{ fontSize: 10.5, color: 'var(--cream-muted)' }}>
-              枠上限時は指示役（{coordinators.map((c) => c.codename).join('・') || '不在'}）配下へ募集
+              上限超過分は指示役配下へ募集（配下には<Term id="info_fog">情報の霧</Term>が発生）
             </span>
           </div>
 

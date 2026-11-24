@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { formatYen } from '../sim/districts';
+import { Term } from './GlossaryTerm';
 import type {
   Character,
   DistrictId,
@@ -501,6 +502,10 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
             <div>
               <div className="section-label">
                 <span>1. 指揮ルートを選択</span>
+                <span className="inline-term-strip">
+                  <Term id="info_fog">情報の霧</Term>
+                  <Term id="t3_trace">T3捜査網</Term>
+                </span>
               </div>
               <div className="dispatch-mode-grid">
                 <button

@@ -6,6 +6,7 @@ import {
   ExitDoorIcon,
   FastForwardIcon,
   HarmSkullIcon,
+  HelpIcon,
   NetworkNodesIcon,
   PauseIcon,
   PlayIcon,
@@ -21,10 +22,12 @@ interface TopHudProps {
   state: GameState;
   showNetworkArcs: boolean;
   muted: boolean;
+  highlightSkipToEvening?: boolean;
   onSetSpeed: (speed: 0 | 1 | 2) => void;
   onSkipToEvening: () => void;
   onToggleNetworkArcs: () => void;
   onResetCamera: () => void;
+  onOpenHowToPlay: () => void;
   onToggleMute: () => void;
   onTriggerQuietExit: () => void;
 }
@@ -40,10 +43,12 @@ export const TopHud: React.FC<TopHudProps> = ({
   state,
   showNetworkArcs,
   muted,
+  highlightSkipToEvening = false,
   onSetSpeed,
   onSkipToEvening,
   onToggleNetworkArcs,
   onResetCamera,
+  onOpenHowToPlay,
   onToggleMute,
   onTriggerQuietExit,
 }) => {
@@ -99,7 +104,7 @@ export const TopHud: React.FC<TopHudProps> = ({
 
           <button
             type="button"
-            className="btn-noir hud-skip-btn"
+            className={`btn-noir hud-skip-btn${highlightSkipToEvening ? ' tutorial-pulse' : ''}`}
             onClick={onSkipToEvening}
             disabled={state.phase !== 'playing'}
             title="22:00の夜間清算へ進む"
@@ -146,6 +151,16 @@ export const TopHud: React.FC<TopHudProps> = ({
           <button
             type="button"
             className="btn-noir hud-icon-btn"
+            onClick={onOpenHowToPlay}
+            title="遊び方ガイド"
+            aria-label="遊び方ガイド"
+          >
+            <HelpIcon size={15} />
+          </button>
+
+          <button
+            type="button"
+            className="btn-noir hud-icon-btn"
             onClick={onToggleMute}
             title={muted ? '音声 ON' : '音声 OFF'}
             aria-label={muted ? '音声 ON' : '音声 OFF'}
@@ -169,6 +184,7 @@ export const TopHud: React.FC<TopHudProps> = ({
               style={{ color: state.cash < 0 ? 'var(--crimson-bright)' : 'var(--amber-bright)' }}
             >
               {formatYen(state.cash)}
+              <span className="hud-meter-goal hide-mobile"> / 2,500万</span>
             </span>
           </div>
           <div className="hud-meter-bar">

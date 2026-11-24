@@ -1,23 +1,31 @@
 """Playwright E2E, visual screenshot, layout, and performance verification for TOKURYU."""
 
 import json
+import socket
 import subprocess
 import sys
 import time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 
-ROOT = Path("/home/antigravity/sandbox/20261123_tokuryu")
+ROOT = Path("/home/antigravity/kogetyadot/tokuryu")
 SHOTS = ROOT / "tests" / "screenshots"
 SHOTS.mkdir(parents=True, exist_ok=True)
-PORT = 4173
-URL = f"http://127.0.0.1:{PORT}"
 
 
-def wait_for_server(url: str, timeout: float = 20.0) -> None:
+def pick_free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return int(s.getsockname()[1])
+
+
+def wait_for_server(url: str, server_proc: subprocess.Popen, timeout: float = 20.0) -> None:
     import urllib.request
     start = time.time()
     while time.time() - start < timeout:
+        if server_proc.poll() is not None:
+            out, err = server_proc.communicate()
+            raise RuntimeError(f"Preview server exited prematurely: {err.decode(errors='ignore')}")
         try:
             with urllib.request.urlopen(url, timeout=2) as resp:
                 if resp.status == 200:
@@ -77,8 +85,10 @@ def measure_fps(page) -> float:
 
 
 def main() -> int:
+    port = pick_free_port()
+    url = f"http://127.0.0.1:{port}"
     server = subprocess.Popen(
-        ["node", "./node_modules/vite/bin/vite.js", "preview", "--host", "127.0.0.1", "--port", str(PORT), "--strictPort"],
+        ["node", "./node_modules/vite/bin/vite.js", "preview", "--host", "127.0.0.1", "--port", str(port), "--strictPort"],
         cwd=str(ROOT),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -90,7 +100,7 @@ def main() -> int:
     report: dict = {}
 
     try:
-        wait_for_server(URL)
+        wait_for_server(url, server)
         with sync_playwright() as p:
             browser = p.chromium.launch(
                 executable_path="/usr/bin/google-chrome",
@@ -111,25 +121,47 @@ def main() -> int:
             page.on("pageerror", lambda err: page_errors.append(f"[desktop] {err}"))
             page.on("response", lambda r: http_errors.append(f"[desktop] {r.status} {r.url}") if r.status >= 400 else None)
 
-            page.goto(URL, wait_until="domcontentloaded")
+            page.goto(url, wait_until="domcontentloaded")
             page.wait_for_timeout(1200)
             check_layout_and_assets(page, "desktop_title", issues)
             page.screenshot(path=str(SHOTS / "desktop_01_title.png"))
 
-            # Start new game
-            page.get_by_role("button", name="運営を開始する").click()
+            # Stage 1 -> Stage 2 Briefing (Doctrine selection over live 3D city)
+            page.locator("button", has_text="新規作戦を開始").first.click()
+            page.wait_for_timeout(600)
+            check_layout_and_assets(page, "desktop_briefing", issues)
+            page.screenshot(path=str(SHOTS / "desktop_01b_briefing.png"))
+
+            # Enter Kaiwan City -> Day 1 with Floating Pins & Misaki's Radio Guide
+            page.locator("button", has_text="海湾市へ潜入する").first.click()
             page.wait_for_timeout(900)
             check_layout_and_assets(page, "desktop_play", issues)
             report["desktop_fps_swiftshader"] = measure_fps(page)
+            report["tutorial_visible"] = page.get_by_test_id("tutorial-guide").count() > 0
+            report["floating_pins_count"] = page.locator(".map-op-pin").count()
             page.screenshot(path=str(SHOTS / "desktop_02_city_play.png"))
 
-            # Open Operation List -> click first operation to open full Dispatch Briefing
-            page.locator("nav.tactical-dock button", has_text="案件一覧").click()
+            # Open How-To-Play Field Manual Modal from TopHud '?' button
+            page.get_by_role("button", name="遊び方ガイド").click()
             page.wait_for_timeout(450)
-            first_op = page.locator(".side-drawer .drawer-body button").first
-            if first_op.count() > 0:
-                first_op.click()
+            check_layout_and_assets(page, "desktop_howtoplay", issues)
+            page.screenshot(path=str(SHOTS / "desktop_02b_howtoplay.png"))
+            page.locator("button", has_text="閉じる / 作戦に戻る").click()
+            page.wait_for_timeout(300)
+
+            # Click first Floating Map Operation Pin OR open Operation List
+            pins = page.locator(".map-op-pin")
+            if pins.count() > 0:
+                pins.first.click()
                 page.wait_for_timeout(450)
+            else:
+                page.locator("nav.tactical-dock button", has_text="案件一覧").click()
+                page.wait_for_timeout(450)
+                first_op = page.locator(".side-drawer .drawer-body button").first
+                if first_op.count() > 0:
+                    first_op.click()
+                    page.wait_for_timeout(450)
+
             # Switch to Delegate mode (指示役へ委任) so Himuro executes and may trigger a lie!
             delegate_btn = page.locator(".side-drawer button", has_text="指示役へ委任")
             if delegate_btn.count() > 0:
@@ -138,7 +170,7 @@ def main() -> int:
             check_layout_and_assets(page, "desktop_ops", issues)
             page.screenshot(path=str(SHOTS / "desktop_03_operation_drawer.png"))
 
-            # Dispatch the delegated op!
+            # Dispatch the delegated op! (Also advances Tutorial Step 1 -> Step 2)
             dispatch_btn = page.locator(".side-drawer button", has_text="案件を実行する")
             if dispatch_btn.count() > 0 and dispatch_btn.first.is_enabled():
                 dispatch_btn.first.click()
@@ -231,15 +263,27 @@ def main() -> int:
             mpage.on("pageerror", lambda err: page_errors.append(f"[mobile] {err}"))
             mpage.on("response", lambda r: http_errors.append(f"[mobile] {r.status} {r.url}") if r.status >= 400 else None)
 
-            mpage.goto(URL, wait_until="domcontentloaded")
+            mpage.goto(url, wait_until="domcontentloaded")
             mpage.wait_for_timeout(900)
             check_layout_and_assets(mpage, "mobile_title", issues)
             mpage.screenshot(path=str(SHOTS / "mobile_01_title.png"))
 
-            mpage.get_by_role("button", name="運営を開始する").click()
+            mpage.locator("button", has_text="新規作戦を開始").first.click()
+            mpage.wait_for_timeout(500)
+            check_layout_and_assets(mpage, "mobile_briefing", issues)
+            mpage.screenshot(path=str(SHOTS / "mobile_01b_briefing.png"))
+
+            mpage.locator("button", has_text="海湾市へ潜入する").first.click()
             mpage.wait_for_timeout(800)
             check_layout_and_assets(mpage, "mobile_play", issues)
             mpage.screenshot(path=str(SHOTS / "mobile_02_play.png"))
+
+            mpage.get_by_role("button", name="遊び方ガイド").click()
+            mpage.wait_for_timeout(450)
+            check_layout_and_assets(mpage, "mobile_howtoplay", issues)
+            mpage.screenshot(path=str(SHOTS / "mobile_02b_howtoplay.png"))
+            mpage.locator("button", has_text="閉じる / 作戦に戻る").click()
+            mpage.wait_for_timeout(300)
 
             mpage.locator("nav.tactical-dock button", has_text="案件一覧").click()
             mpage.wait_for_timeout(500)

@@ -206,6 +206,36 @@ export class CityScene {
     this.radiusGoal = DEFAULT_CAMERA.radius;
   }
 
+  private projVec = new THREE.Vector3();
+
+  public projectWorldPoint(
+    worldX: number,
+    worldY: number,
+    worldZ: number
+  ): { x: number; y: number; visible: boolean } {
+    if (!this.renderer || this.disposed) {
+      return { x: -9999, y: -9999, visible: false };
+    }
+    const width = this.container.clientWidth;
+    const height = this.container.clientHeight;
+    if (width <= 0 || height <= 0) {
+      return { x: -9999, y: -9999, visible: false };
+    }
+    this.projVec.set(worldX, worldY, worldZ).project(this.camera);
+    const visible =
+      this.projVec.z >= -1 &&
+      this.projVec.z <= 1 &&
+      this.projVec.x >= -0.96 &&
+      this.projVec.x <= 0.96 &&
+      this.projVec.y >= -0.92 &&
+      this.projVec.y <= 0.92;
+    return {
+      x: (this.projVec.x * 0.5 + 0.5) * width,
+      y: (-this.projVec.y * 0.5 + 0.5) * height,
+      visible,
+    };
+  }
+
   public resize(): void {
     if (!this.renderer || this.disposed) return;
     const width = Math.max(this.container.clientWidth, 1);

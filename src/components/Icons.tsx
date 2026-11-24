@@ -241,3 +241,13 @@ export const ExitDoorIcon: React.FC<IconProps> = ({ size = 16, className }) => (
     <path d="M16.5 8.5L20 12l-3.5 3.5" />
   </svg>
 );
+
+/** Help / Field Manual Question Icon */
+export const HelpIcon: React.FC<IconProps> = ({ size = 16, className }) => (
+  <svg {...baseProps(size, className)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M9.4 9.5a2.6 2.6 0 0 1 5.1.8c0 1.7-2.5 2.1-2.5 3.6" />
+    <circle cx="12" cy="17.2" r="0.8" fill="currentColor" stroke="none" />
+  </svg>
+);
+

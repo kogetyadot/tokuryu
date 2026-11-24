@@ -10,6 +10,7 @@ import {
   CrewIcon,
   NetworkNodesIcon,
 } from './components/Icons';
+import { HowToPlayModal } from './components/HowToPlayModal';
 import { NetworkGraphModal } from './components/NetworkGraphModal';
 import { NewsTicker } from './components/NewsTicker';
 import { OperationDrawer } from './components/OperationDrawer';
@@ -17,6 +18,7 @@ import { PhoneInbox } from './components/PhoneInbox';
 import { ResultDossier } from './components/ResultDossier';
 import { TitleScreen } from './components/TitleScreen';
 import { TopHud } from './components/TopHud';
+import { TutorialGuide, type TutorialStep } from './components/TutorialGuide';
 import { CityScene } from './scene/CityScene';
 import { formatYen } from './sim/districts';
 import {
@@ -42,8 +44,14 @@ import {
 import type { DistrictId, DoctrineId, GameState, PayPolicy } from './types/game';
 
 const SAVE_STORAGE_KEY = 'tokuryu_save_v1';
+const TUTORIAL_DONE_STORAGE_KEY = 'tokuryu_tutorial_done_v1';
 
 type ActiveDrawer = 'ops' | 'phone' | 'crew' | 'network' | null;
+
+function formatCompactTitle(title: string): string {
+  const clean = title.replace(/^【.*?】/, '');
+  return clean.length > 9 ? `${clean.slice(0, 9)}…` : clean;
+}
 
 function loadSavedState(): GameState | null {
   try {
@@ -77,6 +85,8 @@ export default function App() {
   );
 
   const [activeDrawer, setActiveDrawer] = useState<ActiveDrawer>(null);
+  const [howToPlayOpen, setHowToPlayOpen] = useState<boolean>(false);
+  const [tutorialStep, setTutorialStep] = useState<TutorialStep | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<DistrictId | null>(null);
   const [selectedOpId, setSelectedOpId] = useState<string | null>(null);
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
@@ -85,6 +95,7 @@ export default function App() {
 
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<CityScene | null>(null);
+  const pinElementsRef = useRef<Record<string, HTMLButtonElement | null>>({});
   const prevSnapshotRef = useRef<{
     phase: GameState['phase'];
     msgIds: Set<string>;
@@ -241,7 +252,10 @@ export default function App() {
       if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
 
       if (e.key === 'Escape') {
-        if (activeDrawer) {
+        if (howToPlayOpen) {
+          soundEngine.playClick();
+          setHowToPlayOpen(false);
+        } else if (activeDrawer) {
           soundEngine.playClick();
           setActiveDrawer(null);
           setSelectedOpId(null);
@@ -251,7 +265,7 @@ export default function App() {
         return;
       }
 
-      if (gameState.phase !== 'playing') return;
+      if (gameState.phase !== 'playing' || howToPlayOpen) return;
 
       if (e.code === 'Space') {
         e.preventDefault();
@@ -268,7 +282,31 @@ export default function App() {
 
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [activeDrawer, selectedDistrict, gameState.phase]);
+  }, [activeDrawer, selectedDistrict, gameState.phase, howToPlayOpen]);
+
+  const dismissTutorial = useCallback(() => {
+    soundEngine.playClick();
+    setTutorialStep(null);
+    try {
+      window.localStorage.setItem(TUTORIAL_DONE_STORAGE_KEY, '1');
+    } catch {
+      // Ignore storage failures
+    }
+  }, []);
+
+  // Auto-advance Tutorial Step 2 -> Step 3 when entering evening or Day 2
+  useEffect(() => {
+    if (tutorialStep === 2 && (gameState.phase === 'evening' || gameState.day >= 2)) {
+      setTutorialStep(3);
+    }
+  }, [tutorialStep, gameState.phase, gameState.day]);
+
+  // Auto-advance Tutorial Step 3 -> Step 4 when player opens Encrypted Phone Terminal
+  useEffect(() => {
+    if (tutorialStep === 3 && activeDrawer === 'phone') {
+      setTutorialStep(4);
+    }
+  }, [tutorialStep, activeDrawer]);
 
   // Handlers
   const handleToggleMute = useCallback(() => {
@@ -289,7 +327,17 @@ export default function App() {
   const handleStartNewGame = useCallback((doctrine: DoctrineId) => {
     soundEngine.unlock();
     soundEngine.playDispatch();
-    const next = startNewGame(doctrine);
+    let tutorialDone = false;
+    try {
+      tutorialDone = window.localStorage.getItem(TUTORIAL_DONE_STORAGE_KEY) === '1';
+    } catch {
+      tutorialDone = false;
+    }
+
+    const baseStart = startNewGame(doctrine);
+    // Briefly pause on Day 1 arrival if first-time guided orientation is active
+    const next = tutorialDone ? baseStart : setSpeed(baseStart, 0);
+
     prevSnapshotRef.current = {
       phase: next.phase,
       msgIds: new Set(next.messages.map((m) => m.id)),
@@ -297,6 +345,8 @@ export default function App() {
       policeTrace: next.policeTrace,
     };
     setGameState(next);
+    setTutorialStep(tutorialDone ? null : 1);
+    setHowToPlayOpen(false);
     setActiveDrawer(null);
     setSelectedDistrict(null);
     setSelectedOpId(null);
@@ -320,6 +370,8 @@ export default function App() {
     };
     setSelectedDoctrine(saved.doctrine);
     setGameState(saved);
+    setTutorialStep(null);
+    setHowToPlayOpen(false);
     setActiveDrawer(null);
     setSelectedDistrict(null);
     setSelectedOpId(null);
@@ -327,18 +379,25 @@ export default function App() {
 
   const handleDispatch = useCallback(
     (opId: string, leadId: string, subId: string | null, payPolicy: PayPolicy) => {
+      let dispatchedOk = false;
       setGameState((curr) => {
         const next = dispatchOperation(curr, opId, leadId, subId, payPolicy);
         if (next !== curr) {
+          dispatchedOk = true;
           soundEngine.playDispatch();
+          // Automatically unpause to 1x on Step 1 dispatch during Day-1 onboarding
+          return next.speed === 0 ? setSpeed(next, 1) : next;
         } else {
           soundEngine.playError();
         }
         return next;
       });
+      if (dispatchedOk || tutorialStep === 1) {
+        setTutorialStep((prev) => (prev === 1 ? 2 : prev));
+      }
       setSelectedOpId(null);
     },
-    []
+    [tutorialStep]
   );
 
   const handleAuditMessage = useCallback((msgId: string) => {
@@ -507,6 +566,73 @@ export default function App() {
     [gameState.characters]
   );
 
+  const mapVisibleOps = useMemo(
+    () =>
+      gameState.operations.filter(
+        (o) => o.status === 'available' || o.status === 'active'
+      ),
+    [gameState.operations]
+  );
+
+  const showFloatingPins =
+    gameState.phase === 'playing' &&
+    !howToPlayOpen &&
+    activeDrawer !== 'network';
+
+  // Sync floating map operation pins directly via DOM transforms (ZERO 60fps React re-renders)
+  useEffect(() => {
+    if (!showFloatingPins) return;
+
+    let rafId = 0;
+    const syncPins = () => {
+      const scene = sceneRef.current;
+      if (scene) {
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const isMobile = vw <= 768;
+        const topSafe = isMobile ? 104 : 68;
+        const bottomSafe = isMobile
+          ? activeDrawer
+            ? vh * 0.36
+            : tutorialStep !== null
+            ? vh - 250
+            : vh - 125
+          : vh - 96;
+
+        for (let i = 0; i < mapVisibleOps.length; i++) {
+          const op = mapVisibleOps[i];
+          const el = pinElementsRef.current[op.id];
+          if (!el) continue;
+
+          const projected = scene.projectWorldPoint(
+            op.worldPos[0],
+            3.2,
+            op.worldPos[1]
+          );
+          const inSafeBand =
+            projected.visible &&
+            projected.y >= topSafe &&
+            projected.y <= bottomSafe &&
+            projected.x >= 44 &&
+            projected.x <= vw - 44;
+
+          if (!inSafeBand) {
+            el.style.opacity = '0';
+            el.style.pointerEvents = 'none';
+          } else {
+            el.style.opacity = '1';
+            el.style.pointerEvents = 'auto';
+            el.style.transform = `translate3d(${projected.x.toFixed(1)}px, ${projected.y.toFixed(1)}px, 0) translate(-50%, -100%)`;
+          }
+        }
+      }
+      rafId = requestAnimationFrame(syncPins);
+    };
+
+    rafId = requestAnimationFrame(syncPins);
+    return () => cancelAnimationFrame(rafId);
+  }, [showFloatingPins, mapVisibleOps, activeDrawer, tutorialStep]);
+
   return (
     <>
       {/* Full-viewport interactive 3D Kaiwan City canvas */}
@@ -526,9 +652,65 @@ export default function App() {
           onStartNewGame={handleStartNewGame}
           hasSavedGame={hasSavedGame}
           onContinueGame={handleContinueGame}
+          onOpenHowToPlay={() => setHowToPlayOpen(true)}
           muted={muted}
           onToggleMute={handleToggleMute}
         />
+      )}
+
+      {/* Clickable 3D-Projected Floating Map Operation Pins */}
+      {showFloatingPins && mapVisibleOps.length > 0 && (
+        <div className="map-pins-layer" aria-label="マップ上の案件ピン">
+          {mapVisibleOps.map((op, idx) => {
+            const isActive = op.status === 'active';
+            const isSelected = op.id === selectedOpId;
+            const pulseFirstPin =
+              tutorialStep === 1 && !isActive && idx === 0;
+            const pct = Math.round(op.progress * 100);
+
+            return (
+              <button
+                key={op.id}
+                ref={(el) => {
+                  pinElementsRef.current[op.id] = el;
+                }}
+                type="button"
+                className={`map-op-pin ${isActive ? 'is-active' : 'is-available'}${
+                  isSelected ? ' is-selected' : ''
+                }${pulseFirstPin ? ' tutorial-pulse' : ''}`}
+                style={{ opacity: 0, pointerEvents: 'none' }}
+                onMouseEnter={() => soundEngine.playHover()}
+                onClick={() => {
+                  soundEngine.playClick();
+                  setSelectedDistrict(op.districtId);
+                  setSelectedOpId(op.id);
+                  setActiveDrawer('ops');
+                  sceneRef.current?.focusDistrict(op.districtId);
+                }}
+                title={`${op.title} (${isActive ? `実行中 ${pct}%` : formatYen(op.estimatedYield)})`}
+              >
+                <span className="map-pin-tag-body">
+                  <span className="map-pin-dot" aria-hidden="true" />
+                  {isActive ? (
+                    <span className="map-pin-active-label mono-num">
+                      実行中 {pct}%
+                    </span>
+                  ) : (
+                    <>
+                      <span className="map-pin-yield mono-num">
+                        {formatYen(op.estimatedYield)}
+                      </span>
+                      <span className="map-pin-title hide-mobile">
+                        {formatCompactTitle(op.title)}
+                      </span>
+                    </>
+                  )}
+                </span>
+                <span className="map-pin-stem" aria-hidden="true" />
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {/* Main Playable HUD */}
@@ -538,6 +720,7 @@ export default function App() {
             state={gameState}
             showNetworkArcs={showNetworkArcs}
             muted={muted}
+            highlightSkipToEvening={tutorialStep === 2}
             onSetSpeed={(spd) => {
               soundEngine.playClick();
               setGameState((curr) => setSpeed(curr, spd));
@@ -554,6 +737,10 @@ export default function App() {
               soundEngine.playClick();
               setSelectedDistrict(null);
               sceneRef.current?.resetCamera();
+            }}
+            onOpenHowToPlay={() => {
+              soundEngine.playClick();
+              setHowToPlayOpen(true);
             }}
             onToggleMute={handleToggleMute}
             onTriggerQuietExit={() => {
@@ -730,95 +917,127 @@ export default function App() {
             )}
           </div>
 
-          {/* Bottom Bar: Live News Ticker (Left) + Tactical Dock (Right) */}
-          <div className="hud-bottom">
-            <NewsTicker
-              news={gameState.news}
-              messages={gameState.messages}
-              districts={gameState.districts}
-              onSelectMessage={(msgId) => {
-                soundEngine.playClick();
-                setFocusedMessageId(msgId);
-                setActiveDrawer('phone');
-                setGameState((curr) => markMessageRead(curr, msgId));
-              }}
-              onFocusDistrict={(dId) => {
-                soundEngine.playClick();
-                setSelectedDistrict(dId);
-                sceneRef.current?.focusDistrict(dId);
-              }}
-            />
+          {/* Bottom Stack: Interactive Day-1 Radio Guide + Live News Ticker + Tactical Dock */}
+          <div className="hud-bottom-stack">
+            {tutorialStep !== null &&
+              gameState.phase !== 'ended' &&
+              !(gameState.phase === 'evening' && activeDrawer === null) &&
+              activeDrawer !== 'network' && (
+                <TutorialGuide
+                  step={tutorialStep}
+                  onAdvanceStep={() => {
+                    soundEngine.playClick();
+                    setTutorialStep((prev) =>
+                      prev === null ? null : prev < 4 ? ((prev + 1) as TutorialStep) : null
+                    );
+                  }}
+                  onDismiss={dismissTutorial}
+                />
+              )}
 
-            <nav className="tactical-dock interactive" aria-label="戦術コマンドドック">
-              <button
-                type="button"
-                className={`dock-btn${activeDrawer === 'ops' ? ' active' : ''}`}
-                onMouseEnter={() => soundEngine.playHover()}
-                onClick={() => {
+            <div className="hud-bottom">
+              <NewsTicker
+                news={gameState.news}
+                messages={gameState.messages}
+                districts={gameState.districts}
+                onSelectMessage={(msgId) => {
                   soundEngine.playClick();
-                  setSelectedOpId(null);
-                  setActiveDrawer((d) => (d === 'ops' ? null : 'ops'));
+                  setFocusedMessageId(msgId);
+                  setActiveDrawer('phone');
+                  setGameState((curr) => markMessageRead(curr, msgId));
                 }}
-              >
-                <BriefcaseOpIcon size={16} />
-                <span>案件一覧</span>
-                {availableOpsCount > 0 && (
-                  <span className="dock-badge">{availableOpsCount}</span>
-                )}
-              </button>
+                onFocusDistrict={(dId) => {
+                  soundEngine.playClick();
+                  setSelectedDistrict(dId);
+                  sceneRef.current?.focusDistrict(dId);
+                }}
+              />
 
-              <button
-                type="button"
-                className={`dock-btn${activeDrawer === 'phone' ? ' active' : ''}`}
-                onMouseEnter={() => soundEngine.playHover()}
-                onClick={() => {
-                  soundEngine.playClick();
-                  setFocusedMessageId(null);
-                  setActiveDrawer((d) => (d === 'phone' ? null : 'phone'));
-                }}
-              >
-                <BurnerPhoneIcon size={16} />
-                <span>暗号端末</span>
-                {unreadMessagesCount > 0 && (
-                  <span
-                    className={`dock-badge${urgentMessagesCount > 0 ? ' urgent' : ''}`}
-                  >
-                    {unreadMessagesCount}
-                  </span>
-                )}
-              </button>
+              <nav className="tactical-dock interactive" aria-label="戦術コマンドドック">
+                <button
+                  type="button"
+                  className={`dock-btn${activeDrawer === 'ops' ? ' active' : ''}${
+                    tutorialStep === 1 ? ' tutorial-pulse' : ''
+                  }`}
+                  onMouseEnter={() => soundEngine.playHover()}
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setSelectedOpId(null);
+                    setActiveDrawer((d) => (d === 'ops' ? null : 'ops'));
+                  }}
+                >
+                  <BriefcaseOpIcon size={16} />
+                  <span>案件一覧</span>
+                  {availableOpsCount > 0 && (
+                    <span className="dock-badge">{availableOpsCount}</span>
+                  )}
+                </button>
 
-              <button
-                type="button"
-                className={`dock-btn${activeDrawer === 'crew' ? ' active' : ''}`}
-                onMouseEnter={() => soundEngine.playHover()}
-                onClick={() => {
-                  soundEngine.playClick();
-                  setActiveDrawer((d) => (d === 'crew' ? null : 'crew'));
-                }}
-              >
-                <CrewIcon size={16} />
-                <span>人員・委任</span>
-                {foggedCrewCount > 0 && (
-                  <span className="dock-badge">{foggedCrewCount}</span>
-                )}
-              </button>
+                <button
+                  type="button"
+                  className={`dock-btn${activeDrawer === 'phone' ? ' active' : ''}${
+                    tutorialStep === 3 ? ' tutorial-pulse' : ''
+                  }`}
+                  onMouseEnter={() => soundEngine.playHover()}
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setFocusedMessageId(null);
+                    setActiveDrawer((d) => (d === 'phone' ? null : 'phone'));
+                  }}
+                >
+                  <BurnerPhoneIcon size={16} />
+                  <span>暗号端末</span>
+                  {unreadMessagesCount > 0 && (
+                    <span
+                      className={`dock-badge${urgentMessagesCount > 0 ? ' urgent' : ''}`}
+                    >
+                      {unreadMessagesCount}
+                    </span>
+                  )}
+                </button>
 
-              <button
-                type="button"
-                className={`dock-btn${activeDrawer === 'network' ? ' active' : ''}`}
-                onMouseEnter={() => soundEngine.playHover()}
-                onClick={() => {
-                  soundEngine.playClick();
-                  setActiveDrawer((d) => (d === 'network' ? null : 'network'));
-                }}
-              >
-                <NetworkNodesIcon size={16} />
-                <span>関係網</span>
-              </button>
-            </nav>
+                <button
+                  type="button"
+                  className={`dock-btn${activeDrawer === 'crew' ? ' active' : ''}`}
+                  onMouseEnter={() => soundEngine.playHover()}
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setActiveDrawer((d) => (d === 'crew' ? null : 'crew'));
+                  }}
+                >
+                  <CrewIcon size={16} />
+                  <span>人員・委任</span>
+                  {foggedCrewCount > 0 && (
+                    <span className="dock-badge">{foggedCrewCount}</span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  className={`dock-btn${activeDrawer === 'network' ? ' active' : ''}`}
+                  onMouseEnter={() => soundEngine.playHover()}
+                  onClick={() => {
+                    soundEngine.playClick();
+                    setActiveDrawer((d) => (d === 'network' ? null : 'network'));
+                  }}
+                >
+                  <NetworkNodesIcon size={16} />
+                  <span>関係網</span>
+                </button>
+              </nav>
+            </div>
           </div>
         </div>
+      )}
+
+      {/* Field Manual / How To Play Modal (accessible from Title Screen & TopHud) */}
+      {howToPlayOpen && (
+        <HowToPlayModal
+          onClose={() => {
+            soundEngine.playClick();
+            setHowToPlayOpen(false);
+          }}
+        />
       )}
 
       {/* Network Graph Modal */}

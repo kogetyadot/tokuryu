@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { formatYen } from '../sim/districts';
-import { getDirectSlotUsage } from '../sim/engine';
+import { getDirectSlotUsage, getOperativeTacticalHint } from '../sim/engine';
 import { Term } from './GlossaryTerm';
 import type {
   Character,
@@ -20,6 +20,7 @@ import {
 } from './Icons';
 
 interface CrewPanelProps {
+  day: number;
   characters: Character[];
   districts: Record<DistrictId, DistrictState>;
   directCapacity: number;
@@ -66,6 +67,7 @@ const RECRUIT_COST = 400_000;
 const BONUS_AMOUNT = 300_000;
 
 export const CrewPanel: React.FC<CrewPanelProps> = ({
+  day,
   characters,
   districts,
   directCapacity,
@@ -81,6 +83,7 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
 }) => {
   const [confirmCutId, setConfirmCutId] = useState<string | null>(null);
   const [recruitTarget, setRecruitTarget] = useState<string>('direct');
+  const [showRecruitPanel, setShowRecruitPanel] = useState<boolean>(day >= 3);
 
   const directUsed = useMemo(
     () => getDirectSlotUsage({ characters }),
@@ -126,10 +129,10 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
       <div className="drawer-header">
         <div className="drawer-title-group">
           <CrewIcon size={18} />
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h2 className="drawer-title">人員・委任マネジメント</h2>
             <div className="drawer-subtitle">
-              ROSTER {characters.length} · DIRECT SLOTS {directUsed}/{directCapacity}
+              在籍 {characters.length}名 · 直轄枠 {directUsed}/{directCapacity}
             </div>
           </div>
         </div>
@@ -144,76 +147,74 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
       </div>
 
       <div className="drawer-body">
-        {/* Direct Capacity & Recruitment Bar */}
-        <div
-          style={{
-            padding: '10px 12px',
-            background: 'rgba(7, 10, 15, 0.78)',
-            border: '1px solid var(--cream-hairline)',
-            display: 'flex',
-            flexWrap: 'wrap',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 8,
-          }}
-        >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            <span style={{ fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <Term id="direct_cap">直轄キャパシティ</Term>
-              <span
-                className="mono-num"
-                style={{
-                  color:
-                    directUsed >= directCapacity
-                      ? 'var(--amber-bright)'
-                      : 'var(--teal-bright)',
-                }}
-              >
-                {directUsed} / {directCapacity}
+        {/* Progressive Disclosure: Collapsible Recruitment Bar on Day 1-2 */}
+        <div className="crew-recruit-shell">
+          <button
+            type="button"
+            className="crew-recruit-toggle"
+            onClick={() => setShowRecruitPanel((v) => !v)}
+            aria-expanded={showRecruitPanel}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <strong>人員募集・組織拡大</strong>
+              <span className="mono-num" style={{ fontSize: 11, color: 'var(--teal-bright)' }}>
+                直轄 {directUsed}/{directCapacity}
               </span>
+              {day <= 2 && (
+                <span className="crew-phase-pill">序盤は初期メンバーで十分</span>
+              )}
             </span>
-            <span style={{ fontSize: 10.5, color: 'var(--cream-muted)' }}>
-              上限超過分は指示役配下へ募集（配下には<Term id="info_fog">情報の霧</Term>が発生）
+            <span className="mono-num" style={{ fontSize: 10.5, color: 'var(--cream-muted)' }}>
+              {showRecruitPanel ? '閉じる ▲' : '募集を開く ▼'}
             </span>
-          </div>
+          </button>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <div className="noir-segmented" role="group" aria-label="採用先の所属">
-              <button
-                type="button"
-                className={`noir-seg-btn${recruitTarget === 'direct' ? ' active-amber' : ''}`}
-                disabled={directUsed >= directCapacity}
-                onClick={() => setRecruitTarget('direct')}
-              >
-                直轄採用{directUsed >= directCapacity ? '(満枠)' : ''}
-              </button>
-              {coordinators.map((coord) => (
+          {showRecruitPanel && (
+            <div className="crew-recruit-body">
+              <div style={{ fontSize: 11, color: 'var(--cream-muted)' }}>
+                <Term id="direct_cap">直轄キャパシティ</Term>超過分は幹部配下へ募集（配下には
+                <Term id="info_fog">情報の霧</Term>が発生）
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <div className="noir-segmented" role="group" aria-label="採用先の所属">
+                  <button
+                    type="button"
+                    className={`noir-seg-btn${recruitTarget === 'direct' ? ' active-amber' : ''}`}
+                    disabled={directUsed >= directCapacity}
+                    onClick={() => setRecruitTarget('direct')}
+                  >
+                    直轄採用{directUsed >= directCapacity ? '(満枠)' : ''}
+                  </button>
+                  {coordinators.map((coord) => (
+                    <button
+                      key={coord.id}
+                      type="button"
+                      className={`noir-seg-btn${recruitTarget === coord.id ? ' active-teal' : ''}`}
+                      onClick={() => setRecruitTarget(coord.id)}
+                    >
+                      {coord.codename}配下
+                    </button>
+                  ))}
+                </div>
+
                 <button
-                  key={coord.id}
                   type="button"
-                  className={`noir-seg-btn${recruitTarget === coord.id ? ' active-teal' : ''}`}
-                  onClick={() => setRecruitTarget(coord.id)}
+                  className="btn-noir btn-amber"
+                  disabled={recruitDisabled}
+                  onClick={() => onRecruit(effectiveRecruitSup)}
                 >
-                  {coord.codename}配下
+                  <span>流動実行役を募集 ({formatYen(RECRUIT_COST)})</span>
                 </button>
-              ))}
+              </div>
             </div>
-
-            <button
-              type="button"
-              className="btn-noir btn-amber"
-              disabled={recruitDisabled}
-              onClick={() => onRecruit(effectiveRecruitSup)}
-            >
-              <span>流動実行役を募集 ({formatYen(RECRUIT_COST)})</span>
-            </button>
-          </div>
+          )}
         </div>
 
         {/* Character Roster List */}
         {sortedChars.map((char) => {
           const isActive = char.status === 'idle' || char.status === 'on_mission';
           const tierMeta = TIER_LABELS[char.tier];
+          const tacticalHint = getOperativeTacticalHint(char);
           const supervisor = char.supervisorId
             ? characters.find((c) => c.id === char.supervisorId)
             : undefined;
@@ -297,8 +298,16 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
                     )}
                   </div>
 
-                  {/* Traits */}
+                  {/* Traits + Tactical Hint + Leverage Badge */}
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
+                    <span className={`tactical-tag tone-${tacticalHint.tone}`}>
+                      {tacticalHint.badge}
+                    </span>
+                    {char.leverageReady && isActive && (
+                      <span className="tactical-tag tone-crimson">
+                        弱み掌握（尻尾切り捜査追加-12%）
+                      </span>
+                    )}
                     {char.traits.map((tr) => (
                       <span key={tr} className="trait-chip">
                         {TRAIT_LABELS[tr] ?? tr}

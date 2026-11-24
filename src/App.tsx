@@ -92,10 +92,12 @@ export default function App() {
   const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   const [showNetworkArcs, setShowNetworkArcs] = useState<boolean>(true);
   const [muted, setMuted] = useState<boolean>(false);
+  const [autoPaused, setAutoPaused] = useState<boolean>(false);
 
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<CityScene | null>(null);
   const pinElementsRef = useRef<Record<string, HTMLButtonElement | null>>({});
+  const savedSpeedBeforeOverlayRef = useRef<0 | 1 | 2 | null>(null);
   const prevSnapshotRef = useRef<{
     phase: GameState['phase'];
     msgIds: Set<string>;
@@ -157,6 +159,34 @@ export default function App() {
       window.removeEventListener('keydown', unlockOnce);
     };
   }, []);
+
+  // Auto-pause time while player reads/operates a drawer or guide, then resume prior speed on close
+  const overlayOpen = activeDrawer !== null || howToPlayOpen;
+  useEffect(() => {
+    if (gameState.phase !== 'playing') {
+      savedSpeedBeforeOverlayRef.current = null;
+      setAutoPaused(false);
+      return;
+    }
+
+    if (overlayOpen) {
+      setGameState((curr) => {
+        if (curr.phase === 'playing' && curr.speed > 0) {
+          savedSpeedBeforeOverlayRef.current = curr.speed;
+          setAutoPaused(true);
+          return setSpeed(curr, 0);
+        }
+        return curr;
+      });
+    } else if (savedSpeedBeforeOverlayRef.current !== null) {
+      const restore = savedSpeedBeforeOverlayRef.current;
+      savedSpeedBeforeOverlayRef.current = null;
+      setAutoPaused(false);
+      setGameState((curr) =>
+        curr.phase === 'playing' && curr.speed === 0 ? setSpeed(curr, restore) : curr
+      );
+    }
+  }, [overlayOpen, gameState.phase]);
 
   // Sync audio tension & detect state transitions for automatic SFX
   useEffect(() => {
@@ -428,8 +458,10 @@ export default function App() {
         if (next !== curr) {
           dispatchedOk = true;
           soundEngine.playDispatch();
-          // Automatically unpause to 1x on Step 1 dispatch during Day-1 onboarding
-          return next.speed === 0 ? setSpeed(next, 1) : next;
+          const resumeSpeed = savedSpeedBeforeOverlayRef.current ?? 1;
+          savedSpeedBeforeOverlayRef.current = null;
+          setAutoPaused(false);
+          return next.speed === 0 ? setSpeed(next, resumeSpeed) : next;
         } else {
           soundEngine.playError();
         }
@@ -439,6 +471,7 @@ export default function App() {
         setTutorialStep((prev) => (prev === 1 ? 2 : prev));
       }
       setSelectedOpId(null);
+      setActiveDrawer(null);
     },
     [tutorialStep]
   );
@@ -758,14 +791,17 @@ export default function App() {
 
       {/* Main Playable HUD */}
       {gameState.phase !== 'title' && (
-        <div className="hud-root">
+        <div className={`hud-root${activeDrawer !== null ? ' drawer-open' : ''}`}>
           <TopHud
             state={gameState}
             showNetworkArcs={showNetworkArcs}
             muted={muted}
             highlightSkipToEvening={tutorialStep === 2}
+            autoPaused={autoPaused}
             onSetSpeed={(spd) => {
               soundEngine.playClick();
+              savedSpeedBeforeOverlayRef.current = null;
+              setAutoPaused(false);
               setGameState((curr) => setSpeed(curr, spd));
             }}
             onSkipToEvening={() => {
@@ -909,6 +945,10 @@ export default function App() {
                     sceneRef.current?.focusDistrict(found.districtId);
                   }
                 }}
+                onBackToList={() => {
+                  soundEngine.playClick();
+                  setSelectedOpId(null);
+                }}
                 onDispatch={handleDispatch}
                 onClose={() => {
                   soundEngine.playClick();
@@ -941,6 +981,7 @@ export default function App() {
 
             {activeDrawer === 'crew' && (
               <CrewPanel
+                day={gameState.day}
                 characters={gameState.characters}
                 districts={gameState.districts}
                 directCapacity={gameState.directCapacity}

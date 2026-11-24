@@ -629,5 +629,51 @@ describe('TOKURYU Simulation Engine', () => {
       expect(morningBankrupt.phase).toBe('ended');
       expect(morningBankrupt.ending?.id).toBe('bankrupt');
     });
+
+    it('grants leverageReady on overlook and applies +12% bonus trace cut on subsequent cutOffCharacter', () => {
+      let state = startNewGame('ghost_architect');
+      state = {
+        ...state,
+        policeTrace: 60,
+        messages: [
+          {
+            id: 'msg_lev_test',
+            day: 3,
+            hour: 15,
+            senderId: 'himuro',
+            senderName: '氷室',
+            type: 'report',
+            subject: '完了報告',
+            body: '売上回収しました。',
+            read: false,
+            isUrgent: false,
+            audited: true,
+            containsLie: true,
+            lieType: 'skimming',
+            skimmedAmount: 400_000,
+            resolved: false,
+          },
+          ...state.messages,
+        ],
+      };
+
+      const overlooked = confrontCharacter(state, 'msg_lev_test', 'overlook');
+      const himuroAfterOverlook = overlooked.characters.find((c) => c.id === 'himuro')!;
+      expect(himuroAfterOverlook.leverageReady).toBe(true);
+
+      // Coordinator base trace cut is 12 + leverage bonus 12 = 24
+      const cut = cutOffCharacter(overlooked, 'himuro');
+      expect(cut.policeTrace).toBe(60 - 24);
+    });
+
+    it('delivers Day 3 escalation briefing message from Misaki upon entering Day 3', () => {
+      let state = startNewGame('ghost_architect');
+      state = { ...state, day: 2, cash: 5_000_000 };
+      const evening = skipToEvening(state);
+      const day3 = proceedToNextDay(evening);
+      expect(day3.day).toBe(3);
+      expect(day3.messages.some((m) => m.id === 'msg_phase2_day3')).toBe(true);
+    });
   });
 });
+

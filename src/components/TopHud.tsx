@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { formatYen } from '../sim/districts';
 import type { GameState } from '../types/game';
 import { useGlossary } from './GlossaryTerm';
@@ -24,6 +24,7 @@ interface TopHudProps {
   showNetworkArcs: boolean;
   muted: boolean;
   highlightSkipToEvening?: boolean;
+  autoPaused?: boolean;
   onSetSpeed: (speed: 0 | 1 | 2) => void;
   onSkipToEvening: () => void;
   onToggleNetworkArcs: () => void;
@@ -45,6 +46,7 @@ export const TopHud: React.FC<TopHudProps> = ({
   showNetworkArcs,
   muted,
   highlightSkipToEvening = false,
+  autoPaused = false,
   onSetSpeed,
   onSkipToEvening,
   onToggleNetworkArcs,
@@ -54,6 +56,20 @@ export const TopHud: React.FC<TopHudProps> = ({
   onTriggerQuietExit,
 }) => {
   const { openTerm } = useGlossary();
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    window.addEventListener('pointerdown', onPointerDown);
+    return () => window.removeEventListener('pointerdown', onPointerDown);
+  }, [menuOpen]);
+
   const cashPct = Math.min(100, Math.max(0, (state.cash / state.targetCash) * 100));
   const traceDanger = state.policeTrace >= 65;
   const controlLow = state.control <= 30;
@@ -67,7 +83,8 @@ export const TopHud: React.FC<TopHudProps> = ({
         <div className="hud-time-cluster">
           <div className="hud-day-badge">
             <span className="hud-day-label mono-num">
-              DAY {String(state.day).padStart(2, '0')} / {String(state.maxDays).padStart(2, '0')}
+              D{String(state.day).padStart(2, '0')}
+              <span className="hide-mobile"> / {String(state.maxDays).padStart(2, '0')}</span>
             </span>
             <span className="hud-clock mono-num">{formatClock(state.hour)}</span>
           </div>
@@ -77,10 +94,10 @@ export const TopHud: React.FC<TopHudProps> = ({
               type="button"
               className={`speed-btn${state.speed === 0 ? ' active' : ''}`}
               onClick={() => onSetSpeed(0)}
-              title="一時停止 (Space)"
+              title={autoPaused ? 'パネル展開中は自動一時停止中' : '一時停止 (Space)'}
               aria-label="一時停止"
             >
-              <PauseIcon size={13} />
+              <PauseIcon size={12} />
             </button>
             <button
               type="button"
@@ -89,7 +106,7 @@ export const TopHud: React.FC<TopHudProps> = ({
               title="通常速度 (1)"
               aria-label="通常速度"
             >
-              <PlayIcon size={13} />
+              <PlayIcon size={12} />
               <span style={{ marginLeft: 2 }}>1×</span>
             </button>
             <button
@@ -99,7 +116,7 @@ export const TopHud: React.FC<TopHudProps> = ({
               title="倍速 (2)"
               aria-label="倍速"
             >
-              <FastForwardIcon size={13} />
+              <FastForwardIcon size={12} />
               <span style={{ marginLeft: 2 }}>2×</span>
             </button>
           </div>
@@ -111,12 +128,19 @@ export const TopHud: React.FC<TopHudProps> = ({
             disabled={state.phase !== 'playing'}
             title="22:00の夜間清算へ進む"
           >
-            <SkipNightIcon size={14} />
+            <SkipNightIcon size={13} />
             <span className="skip-label">夜へ進む</span>
           </button>
+
+          {autoPaused && (
+            <span className="hud-autopause-chip mono-num" title="パネル展開中のため自動一時停止しています">
+              AUTO PAUSE
+            </span>
+          )}
         </div>
 
-        <div className="hud-tools-cluster">
+        {/* Desktop Direct Tools */}
+        <div className="hud-tools-cluster hide-mobile">
           {canEarlyExit && (
             <button
               type="button"
@@ -125,7 +149,7 @@ export const TopHud: React.FC<TopHudProps> = ({
               title={`手元資金 ${formatYen(state.earlyExitCash)} 以上で回線を破棄し安全に撤退する`}
             >
               <ExitDoorIcon size={14} />
-              <span className="hide-mobile">雲隠れ (早期撤退)</span>
+              <span>雲隠れ (早期撤退)</span>
             </button>
           )}
 
@@ -137,7 +161,7 @@ export const TopHud: React.FC<TopHudProps> = ({
             aria-pressed={showNetworkArcs}
           >
             <NetworkNodesIcon size={15} />
-            <span className="hide-mobile">3D関係網</span>
+            <span>3D関係網</span>
           </button>
 
           <button
@@ -170,9 +194,95 @@ export const TopHud: React.FC<TopHudProps> = ({
             {muted ? <VolumeOffIcon size={15} /> : <VolumeOnIcon size={15} />}
           </button>
         </div>
+
+        {/* Mobile Compact Overflow Menu */}
+        <div className="hud-mobile-tools show-mobile-only" ref={menuRef}>
+          {canEarlyExit && (
+            <button
+              type="button"
+              className="btn-noir btn-amber hud-mobile-exit"
+              onClick={onTriggerQuietExit}
+              title="雲隠れ（早期撤退）"
+              aria-label="雲隠れ（早期撤退）"
+            >
+              <ExitDoorIcon size={13} />
+            </button>
+          )}
+          <button
+            type="button"
+            className={`btn-noir hud-mobile-menu-btn${menuOpen ? ' active' : ''}`}
+            onClick={() => setMenuOpen((v) => !v)}
+            aria-label="メニューを開く"
+            aria-expanded={menuOpen}
+          >
+            <span className="mono-num">MENU</span>
+          </button>
+
+          {menuOpen && (
+            <div className="hud-overflow-popover noir-panel-sharp" role="menu">
+              <button
+                type="button"
+                className="hud-overflow-item"
+                onClick={() => {
+                  onOpenHowToPlay();
+                  setMenuOpen(false);
+                }}
+              >
+                <HelpIcon size={14} />
+                <span>遊び方・操作ナビ</span>
+              </button>
+              <button
+                type="button"
+                className="hud-overflow-item"
+                onClick={() => {
+                  onToggleMute();
+                  setMenuOpen(false);
+                }}
+              >
+                {muted ? <VolumeOffIcon size={14} /> : <VolumeOnIcon size={14} />}
+                <span>{muted ? 'サウンド: OFF → ON' : 'サウンド: ON → OFF'}</span>
+              </button>
+              <button
+                type="button"
+                className="hud-overflow-item"
+                onClick={() => {
+                  onToggleNetworkArcs();
+                  setMenuOpen(false);
+                }}
+              >
+                <NetworkNodesIcon size={14} />
+                <span>3D関係網ライン: {showNetworkArcs ? '表示中' : '非表示'}</span>
+              </button>
+              <button
+                type="button"
+                className="hud-overflow-item"
+                onClick={() => {
+                  onResetCamera();
+                  setMenuOpen(false);
+                }}
+              >
+                <ResetViewIcon size={14} />
+                <span>カメラ視点をリセット</span>
+              </button>
+              {canEarlyExit && (
+                <button
+                  type="button"
+                  className="hud-overflow-item accent-amber"
+                  onClick={() => {
+                    onTriggerQuietExit();
+                    setMenuOpen(false);
+                  }}
+                >
+                  <ExitDoorIcon size={14} />
+                  <span>雲隠れ（早期撤退）</span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Row 2 on Mobile / Center Cluster on Desktop: 4 Core Tappable Meters */}
+      {/* Row 2 on Mobile (Ultra-Slim 1-Row Strip) / Center Cluster on Desktop */}
       <div className="hud-meters-cluster">
         {/* 裏資金 */}
         <button
@@ -183,9 +293,10 @@ export const TopHud: React.FC<TopHudProps> = ({
         >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
-              <YenIcon size={12} />
-              <span>裏資金</span>
-              <span className="hud-meter-q" aria-hidden="true">?</span>
+              <YenIcon size={11} />
+              <span className="hide-mobile">裏資金</span>
+              <span className="show-mobile-only">資金</span>
+              <span className="hud-meter-q hide-mobile" aria-hidden="true">?</span>
             </span>
             <span
               className="hud-meter-val"
@@ -212,9 +323,10 @@ export const TopHud: React.FC<TopHudProps> = ({
         >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
-              <ControlScaleIcon size={12} />
-              <span>統制力</span>
-              <span className="hud-meter-q" aria-hidden="true">?</span>
+              <ControlScaleIcon size={11} />
+              <span className="hide-mobile">統制力</span>
+              <span className="show-mobile-only">統制</span>
+              <span className="hud-meter-q hide-mobile" aria-hidden="true">?</span>
             </span>
             <span
               className="hud-meter-val"
@@ -243,9 +355,10 @@ export const TopHud: React.FC<TopHudProps> = ({
         >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
-              <SirenIcon size={12} />
-              <span>T3捜査網</span>
-              <span className="hud-meter-q" aria-hidden="true">?</span>
+              <SirenIcon size={11} />
+              <span className="hide-mobile">T3捜査網</span>
+              <span className="show-mobile-only">捜査</span>
+              <span className="hud-meter-q hide-mobile" aria-hidden="true">?</span>
             </span>
             <span
               className="hud-meter-val"
@@ -274,9 +387,10 @@ export const TopHud: React.FC<TopHudProps> = ({
         >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
-              <HarmSkullIcon size={12} />
-              <span>社会被害</span>
-              <span className="hud-meter-q" aria-hidden="true">?</span>
+              <HarmSkullIcon size={11} />
+              <span className="hide-mobile">社会被害</span>
+              <span className="show-mobile-only">被害</span>
+              <span className="hud-meter-q hide-mobile" aria-hidden="true">?</span>
             </span>
             <span
               className="hud-meter-val"

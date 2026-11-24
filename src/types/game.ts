@@ -61,6 +61,8 @@ export interface Character {
   unpaidCount: number;
   missionsCompleted: number;
   lastAutonomousNote?: string;
+  /** Set when boss intentionally overlooks an exposed lie — grants bonus trace cut if later cut off */
+  leverageReady?: boolean;
 }
 
 export type OperationCategory =

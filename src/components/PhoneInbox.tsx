@@ -45,10 +45,14 @@ export const PhoneInbox: React.FC<PhoneInboxProps> = ({
   const [activeId, setActiveId] = useState<string>(
     initialMessageId ?? messages[0]?.id ?? ''
   );
+  const [mobilePane, setMobilePane] = useState<'list' | 'detail'>(
+    initialMessageId ? 'detail' : 'list'
+  );
 
   useEffect(() => {
     if (initialMessageId && messages.some((m) => m.id === initialMessageId)) {
       setActiveId(initialMessageId);
+      setMobilePane('detail');
       onSelectMessage(initialMessageId);
     } else if (!activeId && messages[0]) {
       setActiveId(messages[0].id);
@@ -60,6 +64,7 @@ export const PhoneInbox: React.FC<PhoneInboxProps> = ({
 
   const handleSelect = (msg: PhoneMessage) => {
     setActiveId(msg.id);
+    setMobilePane('detail');
     onSelectMessage(msg.id);
   };
 
@@ -100,11 +105,21 @@ export const PhoneInbox: React.FC<PhoneInboxProps> = ({
     >
       <div className="drawer-header">
         <div className="drawer-title-group">
+          {mobilePane === 'detail' && messages.length > 0 ? (
+            <button
+              type="button"
+              className="drawer-back-btn show-mobile-only"
+              onClick={() => setMobilePane('list')}
+              aria-label="メッセージ一覧へ戻る"
+            >
+              ← 一覧
+            </button>
+          ) : null}
           <BurnerPhoneIcon size={18} />
-          <div>
+          <div style={{ minWidth: 0 }}>
             <h2 className="drawer-title">暗号端末 // SIGNAL-X</h2>
             <div className="drawer-subtitle">
-              UNREAD {unreadCount} · TOTAL {messages.length} · AUDIT {formatYen(auditCost)}
+              未読 {unreadCount} · 全{messages.length}件 · 裏取り {formatYen(auditCost)}
             </div>
           </div>
         </div>
@@ -118,13 +133,13 @@ export const PhoneInbox: React.FC<PhoneInboxProps> = ({
         </button>
       </div>
 
-      <div className="drawer-body" style={{ flex: 1, minHeight: 0 }}>
+      <div className="drawer-body phone-drawer-body" style={{ flex: 1, minHeight: 0 }}>
         {messages.length === 0 ? (
           <div style={{ color: 'var(--cream-muted)', fontSize: 12.5, padding: '16px 0' }}>
             受信メッセージはありません。
           </div>
         ) : (
-          <div className="phone-split">
+          <div className={`phone-split mobile-pane-${mobilePane}`}>
             {/* Left Thread List */}
             <div className="phone-list">
               {messages.map((msg) => {
@@ -436,9 +451,9 @@ export const PhoneInbox: React.FC<PhoneInboxProps> = ({
                         className="btn-noir confront-btn"
                         onClick={() => onConfront(selected.id, 'overlook')}
                       >
-                        <span style={{ fontWeight: 700 }}>黙認して泳がせる</span>
+                        <span style={{ fontWeight: 700 }}>黙認して泳がせる（弱みを掌握）</span>
                         <span className="mono-num confront-meta">
-                          統制-4 / 忠誠+4・野心+8
+                          尻尾切り時 捜査線追加-12% / 忠誠+4・統制-4
                         </span>
                       </button>
                     </div>

@@ -45,6 +45,97 @@ export function getDirectSlotUsage(state: Pick<GameState, 'characters'>): number
   ).length;
 }
 
+export interface OperativeTacticalHint {
+  badge: string;
+  tone: 'teal' | 'amber' | 'crimson';
+  note: string;
+}
+
+/**
+ * Returns a concise human-readable tactical summary of a character's strengths & quirks
+ * so players can make deep strategic decisions without parsing raw stat tables.
+ */
+export function getOperativeTacticalHint(char: Character): OperativeTacticalHint {
+  const routePrefix =
+    char.tier === 'coordinator'
+      ? '委任'
+      : char.tier === 'external'
+      ? '外部'
+      : '直轄';
+
+  if (char.id === 'himuro') {
+    return {
+      badge: `${routePrefix}・捜査遮断◎`,
+      tone: 'teal',
+      note: '捜査線を巧みに逸らすが、高額案件では中抜き警戒。',
+    };
+  }
+  if (char.id === 'misaki') {
+    return {
+      badge: `${routePrefix}・隠密安定`,
+      tone: 'teal',
+      note: '堅実で足がつきにくい。報告も正確で安定感抜群。',
+    };
+  }
+  if (char.id === 'ken') {
+    return {
+      badge: `${routePrefix}・突破力◎`,
+      tone: 'amber',
+      note: '成功率抜群で満額回収。派手なため報道・捜査線リスク高。',
+    };
+  }
+  if (char.id === 'kuroda') {
+    return {
+      badge: char.tier === 'external' ? '外部・24%天引' : `${routePrefix}・強硬派`,
+      tone: 'amber',
+      note:
+        char.tier === 'external'
+          ? '高い実行力を持つ外部ブローカー。報酬の24%が自動天引。'
+          : '実行力は高いが独断・内部摩擦を起こしやすい。',
+    };
+  }
+  if (char.id === 'rena') {
+    return {
+      badge: `${routePrefix}・交渉◎`,
+      tone: 'amber',
+      note: '歓楽街や詐欺案件に強い。報酬不満があると動きが鈍る。',
+    };
+  }
+  if (char.id === 'saiki') {
+    return {
+      badge: '外部・隠密プロ',
+      tone: 'teal',
+      note: '捜査リスク低めで安定。報酬の24%が自動天引。',
+    };
+  }
+  if (char.tier === 'coordinator') {
+    return {
+      badge: '委任・捜査遮断',
+      tone: 'teal',
+      note: '配下を自律投入して捜査線を半減。完了報告の中抜きに注意。',
+    };
+  }
+  if (char.tier === 'external') {
+    return {
+      badge: '外部・24%天引',
+      tone: 'teal',
+      note: '足がつきにくい外部委託。取分の一部が天引される。',
+    };
+  }
+  if (char.isFogged) {
+    return {
+      badge: '実力不透明（霧）',
+      tone: 'crimson',
+      note: '正確な能力は不明。裏取りするまで実力・忠誠に霧がかかる。',
+    };
+  }
+  return {
+    badge: '直轄・満額回収',
+    tone: 'amber',
+    note: '報告精度100%で中抜きなし。失敗時は捜査線へ直結。',
+  };
+}
+
 export function createInitialState(doctrine: DoctrineId = 'ghost_architect'): GameState {
   const cfg = DOCTRINES[doctrine];
   const districts = createInitialDistricts();
@@ -499,9 +590,12 @@ function resolveCompletedOperation(state: GameState, op: Operation): GameState {
     const loyaltyPenalty = Math.max(0, (78 - coordinator.loyalty) * 0.005);
 
     if (outcomeStatus === 'completed' && actualProfit >= 600_000) {
+      const earlyOnboardingScale =
+        op.payPolicy === 'fair' ? (state.day === 1 ? 0.5 : state.day === 2 ? 0.75 : 1.0) : 1.0;
       const skimChance = clamp(
-        0.18 + traitBonus + ambitionFactor + payIncentive + loyaltyPenalty,
-        0.12,
+        (0.18 + traitBonus + ambitionFactor + payIncentive + loyaltyPenalty) *
+          earlyOnboardingScale,
+        0.08,
         0.88
       );
       if (rng() < skimChance) {
@@ -1014,10 +1108,40 @@ export function proceedToNextDay(state: GameState): GameState {
   const spawnCount = Math.max(2, Math.min(4, 6 - activeAvailCount));
   const freshOps = generateOperationsForDay(nextDay, prepState, spawnCount);
 
+  let nextMessages = prepState.messages;
+  let extraIdUsed = 0;
+  if (nextDay === 3 && !prepState.messages.some((m) => m.id === 'msg_phase2_day3')) {
+    const misaki = prepState.characters.find((c) => c.id === 'misaki');
+    const phase2Msg: PhoneMessage = {
+      id: 'msg_phase2_day3',
+      day: 3,
+      hour: 8.1,
+      senderId: 'misaki',
+      senderName: misaki?.codename ?? 'ミサキ',
+      senderRole: misaki?.roleLabel ?? '情報屋・連絡係',
+      senderPortrait: misaki?.portraitUrl ?? './assets/portraits/misaki.jpg',
+      type: 'system',
+      subject: '【第3日・拡大期】幹部の報告と報道にズレが出始めています',
+      body:
+        '白紙さん、今日から組織が本格的に回り始めます。\n' +
+        '幹部に委任した案件では「報告された金額」と「ニュース報道の被害額」が食い違うことがあります。\n\n' +
+        '怪しい報告を見つけたら「裏取り調査」で真偽を暴いてください。\n' +
+        '嘘を暴いた後は「没収して詰問」するか、「黙認して泳がせ、いざという時の『尻尾切り』の切り札にする」かも選べます。',
+      read: false,
+      isUrgent: false,
+      audited: false,
+      containsLie: false,
+      resolved: true,
+    };
+    nextMessages = [phase2Msg, ...nextMessages];
+    extraIdUsed = 1;
+  }
+
   return {
     ...prepState,
+    messages: nextMessages,
     operations: [...keptOps, ...freshOps],
-    nextEntityId: prepState.nextEntityId + freshOps.length + 1,
+    nextEntityId: prepState.nextEntityId + freshOps.length + 1 + extraIdUsed,
   };
 }
 
@@ -1154,6 +1278,7 @@ export function confrontCharacter(
             ...c,
             loyalty: clamp(c.loyalty + 4, 0, 100),
             ambition: clamp(c.ambition + 8, 0, 100),
+            leverageReady: true,
           }
         : c
     );
@@ -1161,6 +1286,13 @@ export function confrontCharacter(
       ...nextState,
       control: clamp(nextState.control - 4, 0, 100),
       characters: updatedChars,
+      timeline: [
+        ...nextState.timeline,
+        {
+          day: nextState.day,
+          text: `${msg.senderName}の虚偽を黙認して泳がせた（弱みを掌握：尻尾切り時に捜査線追加-12%）。`,
+        },
+      ],
     };
   }
 
@@ -1318,7 +1450,9 @@ export function cutOffCharacter(state: GameState, charId: string): GameState {
   const target = state.characters.find((c) => c.id === charId);
   if (!target || !isCharacterActive(target)) return state;
 
-  const traceCut = target.tier === 'coordinator' ? 12 : target.tier === 'direct' ? 10 : 7;
+  const baseTraceCut = target.tier === 'coordinator' ? 12 : target.tier === 'direct' ? 10 : 7;
+  const leverageBonus = target.leverageReady ? 12 : 0;
+  const traceCut = baseTraceCut + leverageBonus;
   let tempsLostDelta = target.tier === 'subordinate' ? 1 : 0;
 
   // Cancel any active operation that only this target was executing

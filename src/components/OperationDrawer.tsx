@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { formatYen } from '../sim/districts';
+import { getOperativeTacticalHint } from '../sim/engine';
 import { Term } from './GlossaryTerm';
 import type {
   Character,
@@ -26,6 +27,7 @@ interface OperationDrawerProps {
   districts: Record<DistrictId, DistrictState>;
   characters: Character[];
   onSelectOperation: (opId: string) => void;
+  onBackToList?: () => void;
   onDispatch: (
     opId: string,
     leadId: string,
@@ -45,10 +47,10 @@ const CATEGORY_LABELS: Record<OperationCategory, string> = {
   front_business: 'フロント合法偽装',
 };
 
-const PAY_POLICIES: { id: PayPolicy; label: string; hint: string }[] = [
-  { id: 'fair', label: '適正報酬', hint: '標準収益 / 忠誠+2・不満小' },
-  { id: 'stingy', label: '買い叩き', hint: '取分+7% / 忠誠-3・中抜き誘発' },
-  { id: 'exploit', label: '未払い・脅迫', hint: '取分+14% / 忠誠-9・離反危険' },
+const PAY_POLICIES: { id: PayPolicy; label: string; shortHint: string }[] = [
+  { id: 'fair', label: '適正', shortHint: '標準 / 忠誠+2' },
+  { id: 'stingy', label: '買い叩き', shortHint: '+7% / 中抜き増' },
+  { id: 'exploit', label: '未払い', shortHint: '+14% / 離反危険' },
 ];
 
 export const OperationDrawer: React.FC<OperationDrawerProps> = ({
@@ -57,13 +59,23 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
   districts,
   characters,
   onSelectOperation,
+  onBackToList,
   onDispatch,
   onClose,
 }) => {
-  const [mode, setMode] = useState<'direct' | 'delegate'>('direct');
   const [selectedLeadId, setSelectedLeadId] = useState<string>('');
-  const [selectedSubId, setSelectedSubId] = useState<string>(''); // '' = auto-assign
   const [payPolicy, setPayPolicy] = useState<PayPolicy>('fair');
+  const [showPayOptions, setShowPayOptions] = useState<boolean>(false);
+
+  const coordinators = useMemo(
+    () =>
+      characters.filter(
+        (c) =>
+          c.tier === 'coordinator' &&
+          (c.status === 'idle' || c.status === 'on_mission')
+      ),
+    [characters]
+  );
 
   const directCandidates = useMemo(
     () =>
@@ -77,112 +89,63 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
     [characters]
   );
 
-  const coordinators = useMemo(
-    () =>
-      characters.filter(
-        (c) =>
-          c.tier === 'coordinator' &&
-          (c.status === 'idle' || c.status === 'on_mission')
-      ),
-    [characters]
-  );
-
-  const activeCoordinatorSubordinates = useMemo(() => {
-    if (mode !== 'delegate' || !selectedLeadId) return [];
-    return characters.filter(
-      (c) =>
-        c.supervisorId === selectedLeadId &&
-        (c.status === 'idle' || c.status === 'on_mission')
-    );
-  }, [characters, mode, selectedLeadId]);
-
+  // Auto-pick best available operative when switching operations (prefer coordinator if ready, else idle direct)
   useEffect(() => {
     if (!operation || operation.status !== 'available') return;
-    const idleDirect = directCandidates.find((c) => c.status === 'idle');
     const usableCoord = coordinators.find((c) => {
       const hasIdleSub = characters.some(
         (sub) => sub.supervisorId === c.id && sub.status === 'idle'
       );
       return hasIdleSub || c.status === 'idle';
     });
+    const idleDirect = directCandidates.find((c) => c.status === 'idle');
 
-    if (idleDirect) {
-      setMode('direct');
+    if (idleDirect && operation.traceRisk <= 12) {
       setSelectedLeadId(idleDirect.id);
-      setSelectedSubId('');
     } else if (usableCoord) {
-      setMode('delegate');
       setSelectedLeadId(usableCoord.id);
-      setSelectedSubId('');
-    } else if (directCandidates[0]) {
-      setMode('direct');
-      setSelectedLeadId(directCandidates[0].id);
-      setSelectedSubId('');
+    } else if (idleDirect) {
+      setSelectedLeadId(idleDirect.id);
+    } else {
+      setSelectedLeadId(coordinators[0]?.id ?? directCandidates[0]?.id ?? '');
     }
     setPayPolicy('fair');
+    setShowPayOptions(false);
   }, [operation?.id]);
 
-  const handleModeSwitch = (nextMode: 'direct' | 'delegate') => {
-    setMode(nextMode);
-    setSelectedSubId('');
-    if (nextMode === 'direct') {
-      const idle = directCandidates.find((c) => c.status === 'idle') ?? directCandidates[0];
-      setSelectedLeadId(idle?.id ?? '');
-    } else {
-      const usableCoord =
-        coordinators.find(
-          (c) =>
-            characters.some((sub) => sub.supervisorId === c.id && sub.status === 'idle') ||
-            c.status === 'idle'
-        ) ?? coordinators[0];
-      setSelectedLeadId(usableCoord?.id ?? '');
-    }
-  };
+  const selectedLead = useMemo(
+    () => characters.find((c) => c.id === selectedLeadId) ?? null,
+    [characters, selectedLeadId]
+  );
+
+  const isDelegated = selectedLead?.tier === 'coordinator';
 
   const canDispatch = useMemo(() => {
-    if (!operation || operation.status !== 'available' || !selectedLeadId) return false;
-    const lead = characters.find((c) => c.id === selectedLeadId);
-    if (!lead || (lead.status !== 'idle' && lead.status !== 'on_mission')) return false;
+    if (!operation || operation.status !== 'available' || !selectedLead) return false;
+    if (selectedLead.status !== 'idle' && selectedLead.status !== 'on_mission') return false;
 
-    if (mode === 'delegate') {
-      if (lead.tier !== 'coordinator') return false;
-      if (selectedSubId) {
-        const sub = characters.find(
-          (c) =>
-            c.id === selectedSubId &&
-            c.supervisorId === lead.id &&
-            c.status === 'idle'
-        );
-        return Boolean(sub);
-      }
+    if (selectedLead.tier === 'coordinator') {
       const hasIdleSub = characters.some(
-        (c) => c.supervisorId === lead.id && c.status === 'idle'
+        (c) => c.supervisorId === selectedLead.id && c.status === 'idle'
       );
-      return hasIdleSub || lead.status === 'idle';
+      return hasIdleSub || selectedLead.status === 'idle';
     }
+    return selectedLead.status === 'idle';
+  }, [operation, selectedLead, characters]);
 
-    return lead.status === 'idle';
-  }, [operation, selectedLeadId, selectedSubId, mode, characters]);
-
-  // Compute live predicted success rate from selected operative(s) & district heat (must stay above early return)
+  // Compute live predicted success rate (always above early return)
   const successPrediction = useMemo(() => {
-    if (!operation || operation.status !== 'available' || !selectedLeadId) return null;
+    if (!operation || operation.status !== 'available' || !selectedLead) return null;
     const district = districts[operation.districtId];
-    const lead = characters.find((c) => c.id === selectedLeadId);
-    if (!lead) return null;
 
-    let executor: Character | undefined = lead;
+    let executor: Character = selectedLead;
     let coordinator: Character | undefined;
-    if (mode === 'delegate' && lead.tier === 'coordinator') {
-      coordinator = lead;
-      if (selectedSubId) {
-        executor = characters.find((c) => c.id === selectedSubId) ?? lead;
-      } else {
-        executor =
-          characters.find(
-            (c) => c.supervisorId === lead.id && c.status === 'idle'
-          ) ?? lead;
-      }
+    if (selectedLead.tier === 'coordinator') {
+      coordinator = selectedLead;
+      executor =
+        characters.find(
+          (c) => c.supervisorId === selectedLead.id && c.status === 'idle'
+        ) ?? selectedLead;
     }
 
     const isFogged = executor.isFogged;
@@ -200,8 +163,10 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
     return {
       pct,
       isFogged,
+      autoSubName:
+        coordinator && executor.id !== coordinator.id ? executor.codename : null,
     };
-  }, [operation, selectedLeadId, selectedSubId, mode, characters, districts, payPolicy]);
+  }, [operation, selectedLead, characters, districts, payPolicy]);
 
   // Operation Catalog View when no single operation is focused
   if (!operation) {
@@ -219,7 +184,7 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
             <div>
               <h2 className="drawer-title">案件一覧 / 作戦盤</h2>
               <div className="drawer-subtitle">
-                ACTIVE {activeOps.length} · AVAILABLE {availableOps.length}
+                受注可能 {availableOps.length}件 · 進行中 {activeOps.length}件
               </div>
             </div>
           </div>
@@ -234,6 +199,47 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
         </div>
 
         <div className="drawer-body">
+          {availableOps.length > 0 && (
+            <div>
+              <div className="section-label">
+                <span>受注できる案件 ({availableOps.length})</span>
+                <span style={{ fontSize: 10, color: 'var(--cream-faint)' }}>タップで担当を選ぶ</span>
+              </div>
+              <div className="selector-list">
+                {availableOps.map((op) => {
+                  const dName = districts[op.districtId]?.name ?? op.districtId;
+                  const riskHigh = op.traceRisk >= 16 || op.harmImpact >= 15;
+                  return (
+                    <button
+                      key={op.id}
+                      type="button"
+                      className="char-pick-row op-catalog-card"
+                      onClick={() => onSelectOperation(op.id)}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div className="op-catalog-top">
+                          <span className="op-catalog-title">{op.title}</span>
+                          <span className="mono-num op-catalog-yield">
+                            {formatYen(op.estimatedYield)}
+                          </span>
+                        </div>
+                        <div className="op-catalog-meta mono-num">
+                          <span>{dName}</span>
+                          <span>難易度 {op.difficulty}</span>
+                          <span style={{ color: riskHigh ? 'var(--crimson-bright)' : 'var(--cream-muted)' }}>
+                            捜査 +{op.traceRisk}%
+                          </span>
+                          <span>{op.durationHours.toFixed(0)}h</span>
+                        </div>
+                      </div>
+                      <ArrowRightIcon size={14} />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {activeOps.length > 0 && (
             <div>
               <div className="section-label">進行中の案件 ({activeOps.length})</div>
@@ -270,81 +276,16 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
             </div>
           )}
 
-          <div>
-            <div className="section-label">受注可能な機会 ({availableOps.length})</div>
-            {availableOps.length === 0 ? (
-              <div style={{ fontSize: 12, color: 'var(--cream-muted)', padding: '10px 0' }}>
-                本日の受注可能案件はありません。時間を進めて夜間清算へ移ってください。
-              </div>
-            ) : (
-              <div className="selector-list">
-                {availableOps.map((op) => {
-                  const d = districts[op.districtId];
-                  return (
-                    <button
-                      key={op.id}
-                      type="button"
-                      className="char-pick-row"
-                      onClick={() => onSelectOperation(op.id)}
-                    >
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'baseline',
-                            gap: 8,
-                          }}
-                        >
-                          <span style={{ fontWeight: 700, fontSize: 12.5 }}>{op.title}</span>
-                          <span
-                            className="mono-num"
-                            style={{ color: 'var(--amber-bright)', fontWeight: 700, fontSize: 12 }}
-                          >
-                            {formatYen(op.estimatedYield)}
-                          </span>
-                        </div>
-                        <div
-                          className="mono-num"
-                          style={{
-                            fontSize: 10.5,
-                            color: 'var(--cream-muted)',
-                            marginTop: 3,
-                            display: 'flex',
-                            gap: 10,
-                            flexWrap: 'wrap',
-                          }}
-                        >
-                          <span style={{ color: d?.accentColor }}>{d?.name}</span>
-                          <span>{CATEGORY_LABELS[op.category]}</span>
-                          <span>捜査線 +{op.traceRisk}</span>
-                          <span
-                            style={{
-                              color: op.harmImpact >= 15 ? 'var(--crimson-bright)' : 'inherit',
-                            }}
-                          >
-                            被害 +{op.harmImpact}
-                          </span>
-                        </div>
-                      </div>
-                      <ArrowRightIcon size={15} />
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
           {recentOps.length > 0 && (
             <div>
-              <div className="section-label">直近の結果履歴</div>
+              <div className="section-label">直近の結果</div>
               <div className="selector-list">
                 {recentOps.map((op) => (
                   <div
                     key={op.id}
                     style={{
                       padding: '8px 10px',
-                      background: 'rgba(7, 10, 15, 0.65)',
+                      background: 'rgba(7, 10, 15, 0.6)',
                       border: '1px solid var(--cream-hairline)',
                       fontSize: 11.5,
                     }}
@@ -389,7 +330,19 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
     <aside className="noir-panel-sharp side-drawer interactive" aria-label="案件実行ブリーフィング">
       <div className="drawer-header">
         <div className="drawer-title-group">
-          <BriefcaseOpIcon size={18} />
+          {onBackToList ? (
+            <button
+              type="button"
+              className="drawer-back-btn"
+              onClick={onBackToList}
+              aria-label="案件一覧へ戻る"
+              title="案件一覧へ戻る"
+            >
+              ← 一覧
+            </button>
+          ) : (
+            <BriefcaseOpIcon size={18} />
+          )}
           <div style={{ minWidth: 0 }}>
             <h2 className="drawer-title">{operation.title}</h2>
             <div className="drawer-subtitle">
@@ -407,64 +360,48 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
         </button>
       </div>
 
+      {/* Single unified scrollable body — no nested vertical split */}
       <div className="drawer-body drawer-body-compact">
-        <p
-          style={{
-            margin: 0,
-            fontSize: 12,
-            lineHeight: 1.45,
-            color: 'var(--cream-muted)',
-          }}
-        >
-          {operation.flavor}
-        </p>
-
-        {/* Core Stats Grid */}
-        <div className="op-meta-grid">
-          <div className="op-meta-cell">
-            <span>見込収益</span>
-            <span style={{ color: 'var(--amber-bright)' }}>
+        {/* Compact 4-stat summary strip */}
+        <div className="op-meta-strip">
+          <div className="op-meta-chip">
+            <span className="op-meta-k">見込収益</span>
+            <strong className="mono-num" style={{ color: 'var(--amber-bright)' }}>
               {formatYen(operation.estimatedYield)}
-            </span>
+            </strong>
           </div>
-          <div className="op-meta-cell">
-            <span>捜査線リスク</span>
-            <span style={{ color: operation.traceRisk >= 16 ? 'var(--crimson-bright)' : 'var(--cream)' }}>
+          <div className="op-meta-chip">
+            <span className="op-meta-k">捜査リスク</span>
+            <strong
+              className="mono-num"
+              style={{ color: operation.traceRisk >= 16 ? 'var(--crimson-bright)' : 'var(--cream)' }}
+            >
               +{operation.traceRisk}%
-            </span>
+            </strong>
           </div>
-          <div className="op-meta-cell">
-            <span>社会被害負荷</span>
-            <span style={{ color: highHarm ? 'var(--crimson-bright)' : 'var(--cream)' }}>
+          <div className="op-meta-chip">
+            <span className="op-meta-k">社会被害</span>
+            <strong
+              className="mono-num"
+              style={{ color: highHarm ? 'var(--crimson-bright)' : 'var(--cream)' }}
+            >
               +{operation.harmImpact}
-            </span>
+            </strong>
           </div>
-          <div className="op-meta-cell">
-            <span>所要 / 難易度</span>
-            <span>
-              {operation.durationHours.toFixed(1)}h / {operation.difficulty}
-            </span>
+          <div className="op-meta-chip">
+            <span className="op-meta-k">時間 / 難度</span>
+            <strong className="mono-num">
+              {operation.durationHours.toFixed(0)}h / {operation.difficulty}
+            </strong>
           </div>
         </div>
 
+        <p className="op-flavor-text">{operation.flavor}</p>
+
         {highHarm && (
-          <div
-            style={{
-              padding: '6px 9px',
-              background: 'rgba(230, 57, 70, 0.12)',
-              border: '1px solid rgba(230, 57, 70, 0.45)',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 7,
-              fontSize: 11,
-              lineHeight: 1.35,
-              color: '#ff9ca3',
-            }}
-          >
-            <HarmSkullIcon size={15} />
-            <span>
-              高被害案件：市民通報やT3警戒が跳ね上がり、実行役のストレスも急増します。
-            </span>
+          <div className="op-warning-strip">
+            <HarmSkullIcon size={14} />
+            <span>高被害案件：通報・報道が跳ね上がり、実行役の負荷も急増します。</span>
           </div>
         )}
 
@@ -498,267 +435,219 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
           </div>
         ) : (
           <>
-            {/* Dispatch Mode Selector */}
+            {/* Unified 1-Step Operative Picker: Choosing a Coordinator = Delegate, Direct = Direct */}
             <div>
               <div className="section-label">
-                <span>1. 指揮ルートを選択</span>
+                <span>担当を選ぶ（1タップ）</span>
                 <span className="inline-term-strip">
                   <Term id="info_fog">情報の霧</Term>
                   <Term id="t3_trace">T3捜査網</Term>
                 </span>
               </div>
-              <div className="dispatch-mode-grid">
-                <button
-                  type="button"
-                  className={`mode-card${mode === 'direct' ? ' active-direct' : ''}`}
-                  onClick={() => handleModeSwitch('direct')}
-                >
-                  <div className="mode-card-title" style={{ color: 'var(--amber-bright)' }}>
-                    <AnonMaskIcon size={14} />
-                    <span>直轄実行 (Direct)</span>
-                  </div>
-                  <div className="mode-card-hint">
-                    報告精度100%・中抜きなし。摘発時の捜査線リスク大。
-                  </div>
-                </button>
 
-                <button
-                  type="button"
-                  className={`mode-card${mode === 'delegate' ? ' active-delegate' : ''}`}
-                  onClick={() => handleModeSwitch('delegate')}
-                >
-                  <div className="mode-card-title" style={{ color: 'var(--teal-bright)' }}>
-                    <NetworkNodesIcon size={14} />
-                    <span>指示役へ委任 (Delegate)</span>
+              {/* Group 1: Coordinators (Delegate) */}
+              {coordinators.length > 0 && (
+                <div className="op-group-block">
+                  <div className="op-group-heading delegate">
+                    <NetworkNodesIcon size={13} />
+                    <span>委任（幹部へ任せる）</span>
+                    <span className="op-group-sub">捜査線半減 · 配下を自動投入 · 中抜き警戒</span>
                   </div>
-                  <div className="mode-card-hint">
-                    捜査線を大幅遮断。報告に「情報の霧」と中抜きリスク。
-                  </div>
-                </button>
-              </div>
-            </div>
+                  <div className="selector-list">
+                    {coordinators.map((char) => {
+                      const isSelected = selectedLeadId === char.id;
+                      const idleSubCount = characters.filter(
+                        (s) => s.supervisorId === char.id && s.status === 'idle'
+                      ).length;
+                      const disabled = idleSubCount === 0 && char.status !== 'idle';
+                      const hint = getOperativeTacticalHint(char);
 
-            {/* Lead Selector */}
-            <div>
-              <div className="section-label">
-                <span>
-                  {mode === 'direct' ? '2. 直轄・外部実行役を選択' : '2. 委任する仲介統括を選択'}
-                </span>
-              </div>
-              <div className="selector-list">
-                {(mode === 'direct' ? directCandidates : coordinators).map((char) => {
-                  const isSelected = selectedLeadId === char.id;
-                  const idleSubCount =
-                    mode === 'delegate'
-                      ? characters.filter(
-                          (s) => s.supervisorId === char.id && s.status === 'idle'
-                        ).length
-                      : 0;
-                  const disabled =
-                    mode === 'direct'
-                      ? char.status !== 'idle'
-                      : idleSubCount === 0 && char.status !== 'idle';
-
-                  return (
-                    <button
-                      key={char.id}
-                      type="button"
-                      disabled={disabled}
-                      className={`char-pick-row${
-                        isSelected ? (mode === 'delegate' ? ' selected-teal' : ' selected') : ''
-                      }`}
-                      onClick={() => {
-                        setSelectedLeadId(char.id);
-                        setSelectedSubId('');
-                      }}
-                    >
-                      <img
-                        src={char.portraitUrl}
-                        alt={char.codename}
-                        className="portrait-thumb"
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div
-                          style={{
-                            display: 'flex',
-                            justifyContent: 'space-between',
-                            alignItems: 'center',
-                            gap: 6,
-                          }}
+                      return (
+                        <button
+                          key={char.id}
+                          type="button"
+                          disabled={disabled}
+                          className={`char-pick-row${isSelected ? ' selected-teal' : ''}`}
+                          onClick={() => setSelectedLeadId(char.id)}
                         >
-                          <span style={{ fontWeight: 700, fontSize: 12.5 }}>
-                            {char.codename}
-                            <span
-                              style={{
-                                fontSize: 11,
-                                color: 'var(--cream-muted)',
-                                fontWeight: 400,
-                                marginLeft: 6,
-                              }}
-                            >
-                              {char.roleLabel}
-                            </span>
-                          </span>
-                          <span className="mono-num" style={{ fontSize: 11, color: 'var(--amber)' }}>
-                            能力 {char.skill}
-                          </span>
-                        </div>
-                        <div
-                          className="mono-num"
-                          style={{ fontSize: 10.5, color: 'var(--cream-faint)', marginTop: 2 }}
-                        >
-                          {char.tier === 'external' && '外部取分24%天引 · '}
-                          {mode === 'delegate'
-                            ? `待機配下 ${idleSubCount}名 · 忠誠 ${char.loyalty}%`
-                            : char.status === 'idle'
-                            ? `待機中 · 隠密 ${char.discretion} · 負荷 ${char.stress}%`
-                            : '別案件で稼働中'}
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Optional Subordinate Picker when Delegating */}
-            {mode === 'delegate' && selectedLeadId && (
-              <div>
-                <div className="section-label">
-                  <span>3. 投入する実行役（任意指定）</span>
+                          <img
+                            src={char.portraitUrl}
+                            alt={char.codename}
+                            className="portrait-thumb"
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div className="char-pick-head">
+                              <span className="char-pick-name">
+                                {char.codename}
+                                <span className="char-pick-role">{char.roleLabel}</span>
+                              </span>
+                              <span className={`tactical-tag tone-${hint.tone}`}>
+                                {hint.badge}
+                              </span>
+                            </div>
+                            <div className="char-pick-note">{hint.note}</div>
+                            <div className="char-pick-sub mono-num">
+                              能力 {char.skill} · 忠誠 {char.loyalty}% ·{' '}
+                              {idleSubCount > 0
+                                ? `待機配下 ${idleSubCount}名を自律投入`
+                                : char.status === 'idle'
+                                ? '配下不在（幹部自ら出動）'
+                                : '別案件で稼働中'}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="selector-list">
-                  <button
-                    type="button"
-                    className={`char-pick-row${selectedSubId === '' ? ' selected-teal' : ''}`}
-                    onClick={() => setSelectedSubId('')}
-                  >
-                    <div style={{ flex: 1, fontSize: 12 }}>
-                      <strong>統括お任せ（自動割当）</strong>
-                      <div style={{ fontSize: 10.5, color: 'var(--cream-muted)' }}>
-                        待機中の配下から統括が自動選択（不在時は統括自ら出動）
-                      </div>
-                    </div>
-                  </button>
-                  {activeCoordinatorSubordinates.map((sub) => (
-                    <button
-                      key={sub.id}
-                      type="button"
-                      disabled={sub.status !== 'idle'}
-                      className={`char-pick-row${selectedSubId === sub.id ? ' selected-teal' : ''}`}
-                      onClick={() => setSelectedSubId(sub.id)}
-                    >
-                      <img
-                        src={sub.portraitUrl}
-                        alt={sub.codename}
-                        className="portrait-thumb"
-                      />
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                          <span style={{ fontWeight: 700, fontSize: 12 }}>{sub.codename}</span>
-                          <span
-                            className={`mono-num${sub.isFogged ? ' fog-stat-mask' : ''}`}
-                            style={{ fontSize: 10.5 }}
-                          >
-                            {sub.isFogged
-                              ? `報告能力 ~${sub.reportedSkill} (霧)`
-                              : `能力 ${sub.skill}`}
-                          </span>
-                        </div>
-                        <div
-                          className="mono-num"
-                          style={{ fontSize: 10.5, color: 'var(--cream-faint)', marginTop: 2 }}
+              )}
+
+              {/* Group 2: Direct & External Operatives */}
+              {directCandidates.length > 0 && (
+                <div className="op-group-block">
+                  <div className="op-group-heading direct">
+                    <AnonMaskIcon size={13} />
+                    <span>直轄・外部（直接動かす）</span>
+                    <span className="op-group-sub">満額回収・報告100%正確 · 捜査線リスク大</span>
+                  </div>
+                  <div className="selector-list">
+                    {directCandidates.map((char) => {
+                      const isSelected = selectedLeadId === char.id;
+                      const disabled = char.status !== 'idle';
+                      const hint = getOperativeTacticalHint(char);
+
+                      return (
+                        <button
+                          key={char.id}
+                          type="button"
+                          disabled={disabled}
+                          className={`char-pick-row${isSelected ? ' selected' : ''}`}
+                          onClick={() => setSelectedLeadId(char.id)}
                         >
-                          {sub.status === 'idle' ? '待機中' : '稼働中'} ·{' '}
-                          {sub.isFogged
-                            ? `報告忠誠 ~${sub.reportedLoyalty}%`
-                            : `忠誠 ${sub.loyalty}% / 負荷 ${sub.stress}%`}
-                        </div>
-                      </div>
+                          <img
+                            src={char.portraitUrl}
+                            alt={char.codename}
+                            className="portrait-thumb"
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div className="char-pick-head">
+                              <span className="char-pick-name">
+                                {char.codename}
+                                <span className="char-pick-role">{char.roleLabel}</span>
+                              </span>
+                              <span className={`tactical-tag tone-${hint.tone}`}>
+                                {hint.badge}
+                              </span>
+                            </div>
+                            <div className="char-pick-note">{hint.note}</div>
+                            <div className="char-pick-sub mono-num">
+                              能力 {char.skill} · 忠誠 {char.loyalty}% · 負荷 {char.stress}% ·{' '}
+                              {char.status === 'idle' ? '待機中' : '稼働中'}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Optional Pay Squeeze Toggle (Collapsed by default so basic flow is 2 taps) */}
+            <div className="op-pay-optional">
+              <button
+                type="button"
+                className={`op-pay-toggle${showPayOptions || payPolicy !== 'fair' ? ' active' : ''}`}
+                onClick={() => setShowPayOptions((v) => !v)}
+                aria-expanded={showPayOptions}
+              >
+                <span>
+                  報酬のピンハネ設定（任意）:{' '}
+                  <strong>
+                    {PAY_POLICIES.find((p) => p.id === payPolicy)?.label ?? '適正'}
+                  </strong>
+                </span>
+                <span className="mono-num" style={{ fontSize: 10.5, color: 'var(--cream-muted)' }}>
+                  {showPayOptions ? '閉じる ▲' : '変更する ▼'}
+                </span>
+              </button>
+
+              {showPayOptions && (
+                <div className="pay-seg-row" role="radiogroup" aria-label="報酬方針">
+                  {PAY_POLICIES.map((pp) => (
+                    <button
+                      key={pp.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={payPolicy === pp.id}
+                      className={`pay-seg-btn${payPolicy === pp.id ? ' selected' : ''}`}
+                      onClick={() => setPayPolicy(pp.id)}
+                    >
+                      <strong>{pp.label}</strong>
+                      <span>{pp.shortHint}</span>
                     </button>
                   ))}
                 </div>
+              )}
+            </div>
+
+            {/* Concise 1-line route warning inside scroll flow */}
+            {selectedLead && (
+              <div
+                className="op-route-note"
+                style={{
+                  color: isDelegated ? 'var(--teal-bright)' : 'var(--amber-bright)',
+                }}
+              >
+                {isDelegated ? <WarningIcon size={13} /> : <SirenIcon size={13} />}
+                <span>
+                  {isDelegated
+                    ? `委任ルート（${selectedLead.codename}${
+                        successPrediction?.autoSubName
+                          ? ` → ${successPrediction.autoSubName}`
+                          : ''
+                      }）：捜査線を大幅遮断。完了後の報告額をニュースと照合しよう。`
+                    : `直轄ルート（${selectedLead.codename}）：中抜きなしで満額回収。失敗時の捜査線跳ね上がりに注意。`}
+                </span>
               </div>
             )}
           </>
         )}
       </div>
 
-      {/* Sticky Drawer Footer: Pay Policy + Live Success Prediction + Primary Dispatch CTA */}
+      {/* Ultra-slim 1-row sticky action bar (eliminates nested vertical split) */}
       {operation.status === 'available' && (
-        <div className="drawer-footer">
-          <div>
-            <div className="section-label" style={{ marginBottom: 4 }}>
-              <span>報酬方針</span>
-              {successPrediction && (
-                <span
-                  className={`prediction-badge${
-                    successPrediction.isFogged
-                      ? ' fogged'
-                      : successPrediction.pct >= 70
-                      ? ' high'
-                      : successPrediction.pct >= 50
-                      ? ' mid'
-                      : ' low'
-                  }`}
-                >
-                  成功率予測:{' '}
-                  {successPrediction.isFogged
-                    ? `~??% (霧 · 推計${successPrediction.pct}%)`
-                    : `~${successPrediction.pct}%`}
-                </span>
-              )}
+        <div className="drawer-footer drawer-footer-slim">
+          {successPrediction && (
+            <div className="footer-prediction-pill">
+              <span className="footer-pred-label">予測成功率</span>
+              <strong
+                className={`mono-num footer-pred-val ${
+                  successPrediction.isFogged
+                    ? 'fogged'
+                    : successPrediction.pct >= 70
+                    ? 'high'
+                    : successPrediction.pct >= 50
+                    ? 'mid'
+                    : 'low'
+                }`}
+              >
+                {successPrediction.isFogged
+                  ? `~${successPrediction.pct}% (霧)`
+                  : `~${successPrediction.pct}%`}
+              </strong>
             </div>
-            <div className="pay-policy-grid">
-              {PAY_POLICIES.map((pp) => (
-                <button
-                  key={pp.id}
-                  type="button"
-                  className={`pay-card pay-card-compact${payPolicy === pp.id ? ' selected' : ''}`}
-                  onClick={() => setPayPolicy(pp.id)}
-                >
-                  <span style={{ fontWeight: 700, fontSize: 11.5 }}>{pp.label}</span>
-                  <span style={{ fontSize: 9.5, lineHeight: 1.25, color: 'var(--cream-muted)' }}>
-                    {pp.hint}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              fontSize: 10.5,
-              lineHeight: 1.35,
-              color: mode === 'delegate' ? 'var(--teal-bright)' : 'var(--amber-bright)',
-            }}
-          >
-            {mode === 'delegate' ? <WarningIcon size={13} /> : <SirenIcon size={13} />}
-            <span>
-              {mode === 'delegate'
-                ? '委任実行：捜査線を約半分に遮断。完了後の報告額に注意。'
-                : '直轄実行：資金を全額回収。失敗・摘発時の捜査線リスク大。'}
-            </span>
-          </div>
+          )}
 
           <button
             type="button"
-            className="btn-noir btn-amber"
-            style={{ width: '100%', minHeight: 42, fontSize: 13.5 }}
+            className="btn-noir btn-amber footer-dispatch-btn"
             disabled={!canDispatch}
             onClick={() =>
-              onDispatch(
-                operation.id,
-                selectedLeadId,
-                mode === 'delegate' && selectedSubId ? selectedSubId : null,
-                payPolicy
-              )
+              onDispatch(operation.id, selectedLeadId, null, payPolicy)
             }
           >
-            <span>案件を実行する</span>
+            <span>{isDelegated ? '委任して実行' : '直轄で実行'}</span>
             <ArrowRightIcon size={16} />
           </button>
         </div>

@@ -73,12 +73,13 @@ function clamp(v: number, min: number, max: number): number {
 }
 
 const LYRIA_TRACKS = {
+  title: './assets/audio/bgm_title.mp3',
   twilight: './assets/audio/bgm_twilight.mp3',
   tension: './assets/audio/bgm_tension.mp3',
   ending: './assets/audio/bgm_ending.mp3',
 } as const;
 
-type LyriaTrackKey = keyof typeof LYRIA_TRACKS;
+export type LyriaTrackKey = keyof typeof LYRIA_TRACKS;
 
 export class SoundEngine {
   private ctx: AudioContext | null = null;
@@ -88,11 +89,18 @@ export class SoundEngine {
   private proceduralBgmBus: GainNode | null = null;
   private sfxBus: GainNode | null = null;
 
-  // Lyria 3.5 adaptive BGM tracks
+  // Lyria 3.5 adaptive BGM tracks (separate Title theme vs Gameplay adaptive score vs Ending)
   private lyriaBus: GainNode | null = null;
   private lyriaFilter: BiquadFilterNode | null = null;
   private lyriaElements: Partial<Record<LyriaTrackKey, HTMLAudioElement>> = {};
   private lyriaGains: Partial<Record<LyriaTrackKey, GainNode>> = {};
+  private lyriaTargets: Record<LyriaTrackKey, number> = {
+    title: 0,
+    twilight: 0,
+    tension: 0,
+    ending: 0,
+  };
+  private lyriaPauseTimers: Partial<Record<LyriaTrackKey, number>> = {};
   private lyriaActive = false;
 
   // BGM procedural fallback layer buses
@@ -187,9 +195,26 @@ export class SoundEngine {
   }
 
   public setTension(policeTrace: number, phase: SoundPhase): void {
+    const prevPhase = this.phase;
     this.policeTrace = clamp(Number.isFinite(policeTrace) ? policeTrace : 0, 0, 100);
     this.phase = phase;
-    this.applyTensionTargets();
+    const isMajorSceneSwitch =
+      prevPhase !== phase &&
+      (prevPhase === 'title' ||
+        phase === 'title' ||
+        prevPhase === 'ended' ||
+        phase === 'ended');
+    this.applyTensionTargets(isMajorSceneSwitch);
+  }
+
+  public getActiveTrackKey(): LyriaTrackKey {
+    return this.getPrimaryTrackForPhase();
+  }
+
+  private getPrimaryTrackForPhase(): LyriaTrackKey {
+    if (this.phase === 'title') return 'title';
+    if (this.phase === 'ended') return 'ending';
+    return this.policeTrace >= 60 ? 'tension' : 'twilight';
   }
 
   /**
@@ -812,20 +837,24 @@ export class SoundEngine {
   private initLyriaAudioElements(ctx: AudioContext): void {
     try {
       if (typeof Audio === 'undefined' || !this.lyriaFilter) return;
+      const primary = this.getPrimaryTrackForPhase();
       (Object.keys(LYRIA_TRACKS) as LyriaTrackKey[]).forEach((key) => {
         const el = new Audio(LYRIA_TRACKS[key]);
         el.loop = true;
-        el.preload = key === 'twilight' ? 'auto' : 'metadata';
+        // Preload both Title theme and Gameplay main theme for instant transition
+        el.preload = key === 'title' || key === 'twilight' ? 'auto' : 'metadata';
         el.crossOrigin = 'anonymous';
 
         const src = ctx.createMediaElementSource(el);
         const gain = ctx.createGain();
-        gain.gain.setValueAtTime(key === 'twilight' ? 1.0 : 0.0, ctx.currentTime);
+        const initialGain = key === primary ? 1.0 : 0.0;
+        gain.gain.setValueAtTime(initialGain, ctx.currentTime);
         src.connect(gain);
         gain.connect(this.lyriaFilter!);
 
         this.lyriaElements[key] = el;
         this.lyriaGains[key] = gain;
+        this.lyriaTargets[key] = initialGain;
       });
     } catch {
       // Fallback seamlessly to procedural BGM if MediaElementSource is unavailable
@@ -834,20 +863,22 @@ export class SoundEngine {
 
   private startLyriaTracks(): void {
     try {
-      const twilight = this.lyriaElements.twilight;
-      if (!twilight || !this.ctx) return;
+      if (!this.ctx) return;
+      const primaryKey = this.getPrimaryTrackForPhase();
+      const primaryEl = this.lyriaElements[primaryKey];
+      if (!primaryEl) return;
 
       const onPlaying = () => {
         if (!this.ctx || !this.lyriaBus || !this.proceduralBgmBus) return;
         this.lyriaActive = true;
         const now = this.ctx.currentTime;
-        this.lyriaBus.gain.setTargetAtTime(1.15, now, 0.45);
-        this.proceduralBgmBus.gain.setTargetAtTime(0.0, now, 0.45);
-        this.applyTensionTargets();
+        this.lyriaBus.gain.setTargetAtTime(1.15, now, 0.4);
+        this.proceduralBgmBus.gain.setTargetAtTime(0.0, now, 0.4);
+        this.applyTensionTargets(false);
       };
 
-      if (twilight.paused) {
-        const p = twilight.play();
+      if (primaryEl.paused) {
+        const p = primaryEl.play();
         if (p && typeof p.then === 'function') {
           void p.then(onPlaying).catch(() => {
             // Keep procedural fallback active
@@ -855,6 +886,8 @@ export class SoundEngine {
         }
       } else if (!this.lyriaActive) {
         onPlaying();
+      } else {
+        this.applyTensionTargets(false);
       }
     } catch {
       // Ignore
@@ -965,6 +998,38 @@ export class SoundEngine {
     const stepInBar = step % 16;
     const chord = PROGRESSION[barIndex];
 
+    // Dedicated atmospheric Title Screen procedural motif (distinct from gameplay groove)
+    if (this.phase === 'title') {
+      if (this.layer1Filter && this.layer1Gain) {
+        if (stepInBar === 0 && barIndex % 2 === 0) {
+          this.triggerSubBass(time, chord.bassRoot, SIXTEENTH_SEC * 28, 0.34);
+          this.triggerRhodesChord(time, chord.rhodes, SIXTEENTH_SEC * 24, 0.16);
+        }
+        // Sparse nocturnal title bell motif (D5 -> A4 -> F4 -> E4 across 4 bars)
+        const titleMotif: Record<number, number> = {
+          0: 587.33, // D5
+          12: 440.0, // A4
+          24: 349.23, // F4
+          36: 329.63, // E4
+          48: 523.25, // C5
+          56: 440.0, // A4
+        };
+        const motifNote = titleMotif[step];
+        if (motifNote) {
+          this.triggerBellTone(
+            time,
+            motifNote,
+            SIXTEENTH_SEC * 10,
+            0.09,
+            2.0,
+            this.layer1Filter,
+            true,
+          );
+        }
+      }
+      return;
+    }
+
     // Subtle swing on off-beat 16ths for nocturnal jazz feel
     const swingOffset = step % 2 === 1 ? 0.011 : 0;
     const t = time + swingOffset;
@@ -1046,9 +1111,22 @@ export class SoundEngine {
     }
   }
 
-  private ensureLyriaTrackPlaying(key: LyriaTrackKey): void {
+  private ensureLyriaTrackPlaying(key: LyriaTrackKey, resetIfPaused = false): void {
+    const existingTimer = this.lyriaPauseTimers[key];
+    if (existingTimer !== undefined && typeof window !== 'undefined') {
+      window.clearTimeout(existingTimer);
+      delete this.lyriaPauseTimers[key];
+    }
+
     const el = this.lyriaElements[key];
     if (el && el.paused) {
+      if (resetIfPaused) {
+        try {
+          el.currentTime = 0;
+        } catch {
+          // Ignore seek errors before metadata is ready
+        }
+      }
       const p = el.play();
       if (p && typeof p.catch === 'function') {
         void p.catch(() => {});
@@ -1056,43 +1134,66 @@ export class SoundEngine {
     }
   }
 
-  private applyTensionTargets(): void {
+  private scheduleLyriaTrackPause(key: LyriaTrackKey): void {
+    if (typeof window === 'undefined') return;
+    if (this.lyriaPauseTimers[key] !== undefined) return;
+    this.lyriaPauseTimers[key] = window.setTimeout(() => {
+      delete this.lyriaPauseTimers[key];
+      if (this.lyriaTargets[key] <= 0.001) {
+        const el = this.lyriaElements[key];
+        if (el && !el.paused) {
+          el.pause();
+        }
+      }
+    }, 2600);
+  }
+
+  private applyTensionTargets(isMajorSceneSwitch = false): void {
     try {
       if (!this.ctx) return;
       const now = this.ctx.currentTime;
       const trace = this.policeTrace;
       const phase = this.phase;
 
-      // Adaptive Lyria 3.5 multi-track crossfade
+      // Adaptive Lyria 3.5 multi-track crossfade:
+      // - 'title': Dedicated cinematic main title theme (bgm_title.mp3)
+      // - 'playing' / 'evening': Gameplay adaptive score (bgm_twilight.mp3 <-> bgm_tension.mp3)
+      // - 'ended': Epilogue dossier theme (bgm_ending.mp3)
       if (this.lyriaActive && this.lyriaFilter) {
-        let twilightTarget = 0;
-        let tensionTarget = 0;
-        let endingTarget = 0;
+        const targets: Record<LyriaTrackKey, number> = {
+          title: 0,
+          twilight: 0,
+          tension: 0,
+          ending: 0,
+        };
         let cutoff = 18000;
 
-        if (phase === 'ended') {
-          endingTarget = 0.92;
+        if (phase === 'title') {
+          targets.title = 0.92;
           cutoff = 18000;
-          this.ensureLyriaTrackPlaying('ending');
-        } else if (phase === 'title') {
-          twilightTarget = 0.85;
-          cutoff = 14000;
-          this.ensureLyriaTrackPlaying('twilight');
+        } else if (phase === 'ended') {
+          targets.ending = 0.92;
+          cutoff = 18000;
         } else {
           // 'playing' or 'evening'
           const tNorm = clamp((trace - 35) / 50, 0, 1);
-          twilightTarget = Math.cos(tNorm * Math.PI * 0.5) * 0.95;
-          tensionTarget = Math.sin(tNorm * Math.PI * 0.5) * 0.95;
+          targets.twilight = Math.cos(tNorm * Math.PI * 0.5) * 0.95;
+          targets.tension = Math.sin(tNorm * Math.PI * 0.5) * 0.95;
           cutoff = phase === 'evening' ? 3200 : 18000;
-          this.ensureLyriaTrackPlaying('twilight');
-          if (tensionTarget > 0.02) {
-            this.ensureLyriaTrackPlaying('tension');
-          }
         }
 
-        this.lyriaGains.twilight?.gain.setTargetAtTime(twilightTarget, now, 0.7);
-        this.lyriaGains.tension?.gain.setTargetAtTime(tensionTarget, now, 0.7);
-        this.lyriaGains.ending?.gain.setTargetAtTime(endingTarget, now, 0.7);
+        const fadeTau = isMajorSceneSwitch ? 0.55 : 0.85;
+        (Object.keys(LYRIA_TRACKS) as LyriaTrackKey[]).forEach((key) => {
+          const target = targets[key];
+          this.lyriaTargets[key] = target;
+          if (target > 0.01) {
+            this.ensureLyriaTrackPlaying(key, isMajorSceneSwitch);
+          } else {
+            this.scheduleLyriaTrackPause(key);
+          }
+          this.lyriaGains[key]?.gain.setTargetAtTime(target, now, fadeTau);
+        });
+
         this.lyriaFilter.frequency.setTargetAtTime(cutoff, now, 0.5);
       }
 

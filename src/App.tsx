@@ -143,6 +143,21 @@ export default function App() {
     );
   }, [gameState, selectedDistrict, selectedOpId, showNetworkArcs]);
 
+  // Unlock audio on first user interaction anywhere (so Title BGM begins immediately)
+  useEffect(() => {
+    const unlockOnce = () => {
+      soundEngine.unlock();
+      window.removeEventListener('pointerdown', unlockOnce);
+      window.removeEventListener('keydown', unlockOnce);
+    };
+    window.addEventListener('pointerdown', unlockOnce, { passive: true });
+    window.addEventListener('keydown', unlockOnce, { passive: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlockOnce);
+      window.removeEventListener('keydown', unlockOnce);
+    };
+  }, []);
+
   // Sync audio tension & detect state transitions for automatic SFX
   useEffect(() => {
     soundEngine.setTension(gameState.policeTrace, gameState.phase);

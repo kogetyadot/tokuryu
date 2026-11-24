@@ -64,6 +64,32 @@ export const EveningReportModal: React.FC<EveningReportModalProps> = ({
         </div>
 
         <div className="drawer-body">
+          {/* Live Kaiwan TV Breaking News Video Monitor */}
+          {(summary.headline.severity === 'breaking' ||
+            summary.headline.severity === 'warning' ||
+            policeTrace >= 55) && (
+            <div className="news-tv-monitor" data-testid="news-alert-video">
+              <video
+                className="news-tv-video"
+                src="./assets/video/news_t3_alert.mp4"
+                autoPlay
+                loop
+                muted
+                playsInline
+                preload="auto"
+                aria-hidden="true"
+              />
+              <div className="news-tv-scanlines" aria-hidden="true" />
+              <div className="news-tv-overlay-top mono-num">
+                <span className="news-tv-live-pill">
+                  <span className="news-tv-live-dot" aria-hidden="true" />
+                  <span>LIVE // 海湾TV 緊急中継</span>
+                </span>
+                <span className="news-tv-cam">CAM-04 BAYFRONT</span>
+              </div>
+            </div>
+          )}
+
           {/* Kaiwan News Main Headline Card */}
           <div
             style={{

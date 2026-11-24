@@ -19,6 +19,20 @@ export const ResultDossier: React.FC<ResultDossierProps> = ({
   const isSuccess =
     ending.id === 'vanished_ghost' || ending.id === 'quiet_exit';
 
+  const endingVideoSrc =
+    ending.id === 'vanished_ghost' || ending.id === 'quiet_exit'
+      ? './assets/video/ending_escape.mp4'
+      : ending.id === 't3_takedown'
+      ? './assets/video/ending_arrest.mp4'
+      : './assets/video/ending_collapse.mp4';
+
+  const endingFootageLabel =
+    ending.id === 'vanished_ghost' || ending.id === 'quiet_exit'
+      ? 'EPILOGUE // DEPARTURE ARCHIVE'
+      : ending.id === 't3_takedown'
+      ? 'EVIDENCE // T3 RAID FOOTAGE'
+      : 'ARCHIVE // NETWORK COLLAPSE';
+
   return (
     <div
       className="modal-backdrop"
@@ -60,6 +74,29 @@ export const ResultDossier: React.FC<ResultDossierProps> = ({
         </div>
 
         <div className="dossier-body">
+          {/* Cinematic Ending Epilogue Footage Reel */}
+          <div className="dossier-video-stage" data-testid="ending-epilogue-video">
+            <video
+              key={endingVideoSrc}
+              className="dossier-video-el"
+              src={endingVideoSrc}
+              autoPlay
+              loop
+              muted
+              playsInline
+              preload="auto"
+              aria-hidden="true"
+            />
+            <div className="dossier-video-scrim" aria-hidden="true" />
+            <div className="dossier-video-bar mono-num">
+              <span className="dossier-rec-pill">
+                <span className="news-tv-live-dot" aria-hidden="true" />
+                <span>{endingFootageLabel}</span>
+              </span>
+              <span>CASE // {ending.id.toUpperCase()}</span>
+            </div>
+          </div>
+
           {/* Newspaper Front Headline + Rank Stamp */}
           <div
             style={{

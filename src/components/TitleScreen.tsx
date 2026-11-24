@@ -149,6 +149,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onToggleMute,
 }) => {
   const [stage, setStage] = useState<TitleStage>('landing');
+  const [videoError, setVideoError] = useState(false);
 
   const activeCfg = DOCTRINES[selectedDoctrine];
   const activeMeta = DOCTRINE_SPOTLIGHT[selectedDoctrine];
@@ -159,13 +160,29 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
         className="title-screen title-stage-landing"
         data-testid="title-screen"
       >
-        {/* Full-bleed AAA key art backdrop */}
-        <img
-          src="./assets/title_keyart.jpg"
-          alt=""
-          className="title-keyart-bg"
-          aria-hidden="true"
-        />
+        {/* Full-bleed AAA animated motion key art backdrop */}
+        {!videoError ? (
+          <video
+            className="title-keyart-bg"
+            src="./assets/video/title_loop.mp4"
+            poster="./assets/title_keyart.jpg"
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="auto"
+            aria-hidden="true"
+            onError={() => setVideoError(true)}
+            data-testid="title-motion-video"
+          />
+        ) : (
+          <img
+            src="./assets/title_keyart.jpg"
+            alt=""
+            className="title-keyart-bg"
+            aria-hidden="true"
+          />
+        )}
         <div className="title-keyart-scrim" aria-hidden="true" />
         <div className="title-edge-slash" aria-hidden="true" />
 

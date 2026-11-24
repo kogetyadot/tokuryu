@@ -5,7 +5,7 @@
 #   "pillow>=10.0.0",
 # ]
 # ///
-"""Game asset generator using Gemini API (Nano Banana 2.1, Lyria 3.5)."""
+"""Game asset generator using Gemini API (Nano Banana 2.1, Lyria 3.5, Gemini Omni 1.2 Flash)."""
 
 import argparse
 import base64
@@ -43,6 +43,7 @@ def _extract_media_bytes(obj, media_type: str) -> bytes | None:
     attr_map = {
         "image": "output_image",
         "audio": "output_audio",
+        "video": "output_video",
     }
     attr = attr_map.get(media_type)
     if attr and hasattr(obj, attr):
@@ -50,14 +51,12 @@ def _extract_media_bytes(obj, media_type: str) -> bytes | None:
         if val is not None and getattr(val, "data", None):
             return _decode_bytes(val.data)
 
-    # Check interactions outputs or steps
     for seq_attr in ("outputs", "steps"):
         items = getattr(obj, seq_attr, None) or []
         for item in items:
             item_type = str(getattr(item, "type", "")).lower()
             if media_type in item_type and getattr(item, "data", None):
                 return _decode_bytes(item.data)
-            # Nested content list inside Step objects
             nested = getattr(item, "content", None) or getattr(item, "outputs", None) or []
             if isinstance(nested, list):
                 for sub in nested:
@@ -68,7 +67,6 @@ def _extract_media_bytes(obj, media_type: str) -> bytes | None:
                     if inline and media_type in str(getattr(inline, "mime_type", "")).lower() and getattr(inline, "data", None):
                         return _decode_bytes(inline.data)
 
-    # Check generate_content candidates
     candidates = getattr(obj, "candidates", None) or []
     for cand in candidates:
         content = getattr(cand, "content", None)
@@ -79,6 +77,30 @@ def _extract_media_bytes(obj, media_type: str) -> bytes | None:
                 return _decode_bytes(inline.data)
 
     return None
+
+
+def _build_interaction_input(prompt: str, refs: list[str] | None):
+    if not refs:
+        return prompt
+    contents: list = [{"type": "text", "text": prompt}]
+    for ref_path in refs:
+        p = Path(ref_path)
+        mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
+        b64 = base64.b64encode(p.read_bytes()).decode("utf-8")
+        contents.append({"type": "image", "data": b64, "mime_type": mime})
+    return contents
+
+
+def _build_gc_contents(prompt: str, refs: list[str] | None):
+    if not refs:
+        return prompt
+    from google.genai import types
+    parts = [types.Part.from_text(text=prompt)]
+    for ref_path in refs:
+        p = Path(ref_path)
+        mime = "image/png" if p.suffix.lower() == ".png" else "image/jpeg"
+        parts.append(types.Part.from_bytes(data=p.read_bytes(), mime_type=mime))
+    return [types.Content(role="user", parts=parts)]
 
 
 def generate_music(client: genai.Client, args: argparse.Namespace) -> None:
@@ -97,20 +119,7 @@ def generate_music(client: genai.Client, args: argparse.Namespace) -> None:
 
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
-
-    if out.suffix.lower() in {".ogg", ".wav"}:
-        tmp_mp3 = out.with_suffix(".tmp.mp3")
-        tmp_mp3.write_bytes(raw)
-        subprocess.run(
-            ["ffmpeg", "-y", "-i", str(tmp_mp3), str(out)],
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        tmp_mp3.unlink(missing_ok=True)
-    else:
-        out.write_bytes(raw)
-
+    out.write_bytes(raw)
     print(f"Saved music to {out} ({out.stat().st_size} bytes)")
 
 
@@ -118,11 +127,15 @@ def generate_image(client: genai.Client, args: argparse.Namespace) -> None:
     model = args.model or "gemini-nano-banana-2.1"
     raw = None
     try:
-        interaction = client.interactions.create(model=model, input=args.prompt)
+        interaction = client.interactions.create(
+            model=model, input=_build_interaction_input(args.prompt, args.ref)
+        )
         raw = _extract_media_bytes(interaction, "image")
     except Exception as e:
         print(f"Interactions API fallback ({e}); trying generate_content...", file=sys.stderr)
-        resp = client.models.generate_content(model=model, contents=args.prompt)
+        resp = client.models.generate_content(
+            model=model, contents=_build_gc_contents(args.prompt, args.ref)
+        )
         raw = _extract_media_bytes(resp, "image")
 
     if not raw:
@@ -140,15 +153,50 @@ def generate_image(client: genai.Client, args: argparse.Namespace) -> None:
     print(f"Saved image to {out} ({out.stat().st_size} bytes)")
 
 
+def generate_video(client: genai.Client, args: argparse.Namespace) -> None:
+    model = args.model or "gemini-omni-1.2-flash"
+    raw = None
+    last_err = None
+    try:
+        interaction = client.interactions.create(
+            model=model, input=_build_interaction_input(args.prompt, args.ref)
+        )
+        raw = _extract_media_bytes(interaction, "video")
+        if not raw:
+            print("Interactions returned no video payload; trying generate_content...", file=sys.stderr)
+    except Exception as e:
+        last_err = e
+        print(f"Interactions API fallback ({e}); trying generate_content...", file=sys.stderr)
+
+    if not raw:
+        try:
+            resp = client.models.generate_content(
+                model=model, contents=_build_gc_contents(args.prompt, args.ref)
+            )
+            raw = _extract_media_bytes(resp, "video")
+        except Exception as e:
+            raise RuntimeError(f"Video generation failed ({last_err} / {e})") from e
+
+    if not raw:
+        raise RuntimeError(f"No video returned from {model}")
+
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(raw)
+    print(f"Saved video to {out} ({out.stat().st_size} bytes)")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate game assets via Gemini API")
     sub = parser.add_subparsers(dest="kind", required=True)
 
-    for kind in ("image", "music"):
+    for kind in ("image", "music", "video"):
         p = sub.add_parser(kind)
         p.add_argument("--prompt", required=True, help="Generation prompt")
         p.add_argument("--output", required=True, help="Output file path")
         p.add_argument("--model", default=None, help="Override Gemini model ID")
+        if kind in ("image", "video"):
+            p.add_argument("--ref", nargs="*", help="Optional reference image paths")
         if kind == "image":
             p.add_argument("--resize", help="Optional WxH resize (e.g. 64x64)")
 
@@ -159,6 +207,8 @@ def main() -> None:
         generate_image(client, args)
     elif args.kind == "music":
         generate_music(client, args)
+    elif args.kind == "video":
+        generate_video(client, args)
 
 
 if __name__ == "__main__":

@@ -14,7 +14,9 @@ export type GlossaryId =
   | 'city_harm'
   | 'cutoff'
   | 'quiet_exit'
-  | 'direct_cap';
+  | 'direct_cap'
+  | 'promote'
+  | 'external_op';
 
 export interface GlossaryEntry {
   title: string;
@@ -104,8 +106,8 @@ export const GLOSSARY: Record<GlossaryId, GlossaryEntry> = {
     accent: 'crimson',
     summary:
       '足がついた構成員や裏切り者の通信を焼き切り、組織から強制的に切り離す非常手段です。',
-    tip: 'T3捜査網を大きく下げられますが、切り捨てた人物と親しい仲間の忠誠や、組織全体の統制力が下がります。',
-    related: ['t3_trace', 'control'],
+    tip: 'T3捜査網を大きく下げられます（事前に虚偽を黙認し「弱み掌握」していれば追加で-12%）。ただし親しい仲間の忠誠と統制力が低下します。',
+    related: ['t3_trace', 'control', 'audit'],
   },
   quiet_exit: {
     title: '雲隠れ（早期撤退エンド）',
@@ -122,8 +124,26 @@ export const GLOSSARY: Record<GlossaryId, GlossaryEntry> = {
     accent: 'amber',
     summary:
       '元締めが直接連絡を取れる人数の上限です。匿名性を保つため、1人で全員を直接管理することはできません。',
-    tip: '規模を広げるには、直轄メンバーを「指示役」に昇格させ、その配下へ流動実行役を募集・配置しましょう。',
-    related: ['delegate_exec', 'info_fog'],
+    tip: '規模を広げるには、直轄メンバーを「指示役」に昇格させ、その配下へ流動実行役を募集・配置します。',
+    related: ['promote', 'delegate_exec', 'info_fog'],
+  },
+  promote: {
+    title: '指示役へ昇格（幹部化）',
+    tag: 'ORG STRUCTURE',
+    accent: 'teal',
+    summary:
+      '直轄メンバーを仲介統括（指示役）へ引き上げ、自分の配下を持てるようにします（昇格後は直轄へ戻せません）。',
+    tip: '忠誠+6・野心+8。委任実行でT3捜査網を遮断でき組織を横展開できますが、直轄での満額回収は不可になり、中抜き・隠蔽リスクが生じます。',
+    related: ['delegate_exec', 'direct_cap', 'info_fog'],
+  },
+  external_op: {
+    title: '外部メンバー（委託実行役）',
+    tag: 'CONTRACTOR',
+    accent: 'amber',
+    summary:
+      '直轄枠を消費せず案件へ投入できる外部のブローカーや実行役です。',
+    tip: '足がつきにくく即戦力として使いやすい反面、案件成功時の報酬から24%が取り分として自動天引されます。',
+    related: ['direct_exec', 'direct_cap'],
   },
 };
 

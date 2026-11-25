@@ -82,6 +82,7 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
   onClose,
 }) => {
   const [confirmCutId, setConfirmCutId] = useState<string | null>(null);
+  const [confirmPromoteId, setConfirmPromoteId] = useState<string | null>(null);
   const [recruitTarget, setRecruitTarget] = useState<string>('direct');
   const [showRecruitPanel, setShowRecruitPanel] = useState<boolean>(day >= 3);
 
@@ -147,7 +148,7 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
       </div>
 
       <div className="drawer-body">
-        {/* Progressive Disclosure: Collapsible Recruitment Bar on Day 1-2 */}
+        {/* Clean 1-line Recruitment Bar (No directive copy) */}
         <div className="crew-recruit-shell">
           <button
             type="button"
@@ -155,16 +156,13 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
             onClick={() => setShowRecruitPanel((v) => !v)}
             aria-expanded={showRecruitPanel}
           >
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              <strong>人員募集・組織拡大</strong>
-              <span className="mono-num" style={{ fontSize: 11, color: 'var(--teal-bright)' }}>
+            <span className="crew-recruit-title-row">
+              <strong>人員募集</strong>
+              <span className="mono-num crew-recruit-slots">
                 直轄 {directUsed}/{directCapacity}
               </span>
-              {day <= 2 && (
-                <span className="crew-phase-pill">序盤は初期メンバーで十分</span>
-              )}
             </span>
-            <span className="mono-num" style={{ fontSize: 10.5, color: 'var(--cream-muted)' }}>
+            <span className="mono-num crew-recruit-caret">
               {showRecruitPanel ? '閉じる ▲' : '募集を開く ▼'}
             </span>
           </button>
@@ -410,107 +408,79 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
 
               {/* Actions */}
               {isActive && (
-                <div
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    flexWrap: 'wrap',
-                  }}
-                >
-                  {canPromote && (
-                    <button
-                      type="button"
-                      className="btn-noir btn-teal"
-                      style={{ minHeight: 32, padding: '4px 9px', fontSize: 11 }}
-                      onClick={() => onPromoteToCoordinator(char.id)}
-                    >
-                      指示役へ昇格
-                    </button>
-                  )}
-
-                  {canReassign && (
-                    <div
-                      className="noir-segmented"
-                      role="group"
-                      aria-label={`${char.codename}の所属変更`}
-                    >
-                      <button
-                        type="button"
-                        className={`noir-seg-btn${
-                          char.supervisorId === null ? ' active-amber' : ''
-                        }`}
-                        disabled={
-                          char.supervisorId !== null && directUsed >= directCapacity
-                        }
-                        onClick={() => onReassignSupervisor(char.id, null)}
-                      >
-                        直轄
-                        {char.supervisorId !== null && directUsed >= directCapacity
-                          ? '(満枠)'
-                          : ''}
-                      </button>
-                      {coordinators.map((coord) => (
-                        <button
-                          key={coord.id}
-                          type="button"
-                          className={`noir-seg-btn${
-                            char.supervisorId === coord.id ? ' active-teal' : ''
-                          }`}
-                          onClick={() => onReassignSupervisor(char.id, coord.id)}
-                        >
-                          {coord.codename}配下
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  <button
-                    type="button"
-                    className="btn-noir"
-                    style={{ minHeight: 32, padding: '4px 9px', fontSize: 11 }}
-                    disabled={cash < BONUS_AMOUNT}
-                    onClick={() => onGiveBonus(char.id, BONUS_AMOUNT)}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      flexWrap: 'wrap',
+                    }}
                   >
-                    <YenIcon size={12} />
-                    <span>報奨金 ({formatYen(BONUS_AMOUNT)})</span>
-                  </button>
-
-                  {confirmCutId === char.id ? (
-                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginLeft: 'auto' }}>
-                      <span
-                        style={{
-                          fontSize: 10.5,
-                          color: 'var(--crimson-bright)',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: 3,
-                        }}
-                      >
-                        <WarningIcon size={12} />
-                        <span>本当に切り捨てる？</span>
-                      </span>
+                    {canPromote && (
                       <button
                         type="button"
-                        className="btn-noir btn-crimson-solid"
+                        className={`btn-noir btn-teal${confirmPromoteId === char.id ? ' active' : ''}`}
                         style={{ minHeight: 32, padding: '4px 9px', fontSize: 11 }}
                         onClick={() => {
-                          onCutOff(char.id);
                           setConfirmCutId(null);
+                          setConfirmPromoteId((curr) => (curr === char.id ? null : char.id));
                         }}
                       >
-                        確定
+                        指示役へ昇格
                       </button>
-                      <button
-                        type="button"
-                        className="btn-noir"
-                        style={{ minHeight: 32, padding: '4px 8px', fontSize: 11 }}
-                        onClick={() => setConfirmCutId(null)}
+                    )}
+
+                    {canReassign && (
+                      <div
+                        className="noir-segmented"
+                        role="group"
+                        aria-label={`${char.codename}の所属変更`}
                       >
-                        取消
-                      </button>
-                    </div>
-                  ) : (
+                        <button
+                          type="button"
+                          className={`noir-seg-btn${
+                            char.supervisorId === null ? ' active-amber' : ''
+                          }`}
+                          disabled={
+                            char.supervisorId !== null && directUsed >= directCapacity
+                          }
+                          title="直轄：実態100%把握・満額回収（直轄枠を1消費）"
+                          onClick={() => onReassignSupervisor(char.id, null)}
+                        >
+                          直轄
+                          {char.supervisorId !== null && directUsed >= directCapacity
+                            ? '(満枠)'
+                            : ''}
+                        </button>
+                        {coordinators.map((coord) => (
+                          <button
+                            key={coord.id}
+                            type="button"
+                            className={`noir-seg-btn${
+                              char.supervisorId === coord.id ? ' active-teal' : ''
+                            }`}
+                            title={`${coord.codename}配下へ移管：直轄枠が空くが「情報の霧」がかかる`}
+                            onClick={() => onReassignSupervisor(char.id, coord.id)}
+                          >
+                            {coord.codename}配下
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      className="btn-noir"
+                      style={{ minHeight: 32, padding: '4px 9px', fontSize: 11 }}
+                      disabled={cash < BONUS_AMOUNT}
+                      title="忠誠+14・負荷-14（不満や下剋上の抑止）"
+                      onClick={() => onGiveBonus(char.id, BONUS_AMOUNT)}
+                    >
+                      <YenIcon size={12} />
+                      <span>報奨金 ({formatYen(BONUS_AMOUNT)})</span>
+                    </button>
+
                     <button
                       type="button"
                       className="btn-noir btn-crimson"
@@ -520,12 +490,100 @@ export const CrewPanel: React.FC<CrewPanelProps> = ({
                         fontSize: 11,
                         marginLeft: 'auto',
                       }}
-                      onClick={() => setConfirmCutId(char.id)}
+                      onClick={() => {
+                        setConfirmPromoteId(null);
+                        setConfirmCutId((curr) => (curr === char.id ? null : char.id));
+                      }}
                     >
                       <CutOffBladeIcon size={13} />
                       <span>切り捨て (尻尾切り)</span>
                     </button>
+                  </div>
+
+                  {/* Inline Promote Preview & Confirm */}
+                  {confirmPromoteId === char.id && (
+                    <div className="crew-confirm-box promote">
+                      <div className="crew-confirm-head">
+                        <strong>{char.codename}を「指示役（幹部）」へ昇格</strong>
+                        <span className="mono-num crew-confirm-delta">
+                          忠誠+6 / 野心+8 · 昇格後は直轄へ戻せません
+                        </span>
+                      </div>
+                      <ul className="crew-confirm-list">
+                        <li>
+                          <strong>利点：</strong>配下を持てるようになり、案件を
+                          <Term id="delegate_exec">委任</Term>
+                          で回して捜査線を大幅遮断できる。
+                        </li>
+                        <li>
+                          <strong>リスク：</strong>直轄での満額回収は不可になり、報告に中抜き・隠蔽や配下の
+                          <Term id="info_fog">情報の霧</Term>が発生する。
+                        </li>
+                      </ul>
+                      <div className="crew-confirm-actions">
+                        <button
+                          type="button"
+                          className="btn-noir btn-teal"
+                          style={{ minHeight: 32, padding: '4px 12px', fontSize: 11.5 }}
+                          onClick={() => {
+                            onPromoteToCoordinator(char.id);
+                            setConfirmPromoteId(null);
+                          }}
+                        >
+                          昇格を確定
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-noir"
+                          style={{ minHeight: 32, padding: '4px 10px', fontSize: 11.5 }}
+                          onClick={() => setConfirmPromoteId(null)}
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
                   )}
+
+                  {/* Inline Cut-Off Preview & Confirm */}
+                  {confirmCutId === char.id && (() => {
+                    const baseCut =
+                      char.tier === 'coordinator' ? 12 : char.tier === 'direct' ? 10 : 7;
+                    const totalCut = baseCut + (char.leverageReady ? 12 : 0);
+                    return (
+                      <div className="crew-confirm-box cutoff">
+                        <div className="crew-confirm-head">
+                          <strong style={{ color: 'var(--crimson-bright)' }}>
+                            <WarningIcon size={13} /> {char.codename}を切り捨てる（永久離脱）
+                          </strong>
+                          <span className="mono-num crew-confirm-delta">
+                            T3捜査網 -{totalCut}%
+                            {char.leverageReady ? '（弱み掌握ボーナス込）' : ''} / 統制-5
+                          </span>
+                        </div>
+                        <div className="crew-confirm-actions">
+                          <button
+                            type="button"
+                            className="btn-noir btn-crimson-solid"
+                            style={{ minHeight: 32, padding: '4px 12px', fontSize: 11.5 }}
+                            onClick={() => {
+                              onCutOff(char.id);
+                              setConfirmCutId(null);
+                            }}
+                          >
+                            切り捨てを確定
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-noir"
+                            style={{ minHeight: 32, padding: '4px 10px', fontSize: 11.5 }}
+                            onClick={() => setConfirmCutId(null)}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>

@@ -606,8 +606,8 @@ export const OperationDrawer: React.FC<OperationDrawerProps> = ({
                         successPrediction?.autoSubName
                           ? ` → ${successPrediction.autoSubName}`
                           : ''
-                      }）：捜査線を大幅遮断。完了後の報告額をニュースと照合しよう。`
-                    : `直轄ルート（${selectedLead.codename}）：中抜きなしで満額回収。失敗時の捜査線跳ね上がりに注意。`}
+                      }）：捜査線を大幅遮断。完了報告に中抜き・隠蔽が混ざる恐れあり。`
+                    : `直轄ルート（${selectedLead.codename}）：中抜きなしで満額回収。失敗時の捜査線リスク大。`}
                 </span>
               </div>
             )}

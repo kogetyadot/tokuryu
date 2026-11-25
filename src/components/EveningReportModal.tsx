@@ -283,7 +283,7 @@ export const EveningReportModal: React.FC<EveningReportModalProps> = ({
                 }}
               >
                 <WarningIcon size={16} />
-                <span>不整合を検知：暗号端末で「裏取り調査」を実行してください</span>
+                <span>不整合を検知：報告額と報道規模に食い違いあり（暗号端末で裏取り可能）</span>
               </div>
               <button
                 type="button"

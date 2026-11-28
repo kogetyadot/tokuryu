@@ -5,7 +5,8 @@ import { CloseIcon, NetworkNodesIcon } from './Icons';
 
 interface NetworkGraphModalProps {
   characters: Character[];
-  onClose: () => void;
+  onClose?: () => void;
+  embedded?: boolean;
 }
 
 interface PositionedNode {
@@ -21,6 +22,7 @@ interface PositionedNode {
 export const NetworkGraphModal: React.FC<NetworkGraphModalProps> = ({
   characters,
   onClose,
+  embedded = false,
 }) => {
   const [selectedId, setSelectedId] = useState<string>(characters[0]?.id ?? 'you');
 
@@ -267,36 +269,8 @@ export const NetworkGraphModal: React.FC<NetworkGraphModalProps> = ({
     });
   }, [bondEdges, nodes]);
 
-  return (
-    <div
-      className="modal-backdrop"
-      onClick={onClose}
-      role="dialog"
-      aria-modal="true"
-      aria-label="組織関係網ビュー"
-    >
-      <div className="noir-panel-sharp modal-card" onClick={(e) => e.stopPropagation()}>
-        <div className="drawer-header">
-          <div className="drawer-title-group">
-            <NetworkNodesIcon size={18} />
-            <div>
-              <h2 className="drawer-title">組織・人間関係網ビュー</h2>
-              <div className="drawer-subtitle">
-                COMMAND HIERARCHY &amp; INTERPERSONAL BONDS
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            className="drawer-close-btn"
-            onClick={onClose}
-            aria-label="閉じる"
-          >
-            <CloseIcon size={16} />
-          </button>
-        </div>
-
-        <div className="network-modal-grid">
+  const graphContent = (
+        <div className={`network-modal-grid${embedded ? ' embedded' : ''}`}>
           {/* Interactive SVG Graph */}
           <div className="network-svg-wrap">
             <svg
@@ -623,6 +597,43 @@ export const NetworkGraphModal: React.FC<NetworkGraphModalProps> = ({
             )}
           </div>
         </div>
+  );
+
+  if (embedded) {
+    return graphContent;
+  }
+
+  return (
+    <div
+      className="modal-backdrop"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label="組織関係網ビュー"
+    >
+      <div className="noir-panel-sharp modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="drawer-header">
+          <div className="drawer-title-group">
+            <NetworkNodesIcon size={18} />
+            <div>
+              <h2 className="drawer-title">組織・人間関係網ビュー</h2>
+              <div className="drawer-subtitle">
+                COMMAND HIERARCHY &amp; INTERPERSONAL BONDS
+              </div>
+            </div>
+          </div>
+          {onClose && (
+            <button
+              type="button"
+              className="drawer-close-btn"
+              onClick={onClose}
+              aria-label="閉じる"
+            >
+              <CloseIcon size={16} />
+            </button>
+          )}
+        </div>
+        {graphContent}
       </div>
     </div>
   );

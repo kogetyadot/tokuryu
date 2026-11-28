@@ -8,10 +8,12 @@ import {
   BurnerPhoneIcon,
   CloseIcon,
   CrewIcon,
-  NetworkNodesIcon,
 } from './components/Icons';
 import { HowToPlayModal } from './components/HowToPlayModal';
-import { NetworkGraphModal } from './components/NetworkGraphModal';
+import {
+  LiveActionOverlay,
+  type OutcomeToastData,
+} from './components/LiveActionOverlay';
 import { NewsTicker } from './components/NewsTicker';
 import { OperationDrawer } from './components/OperationDrawer';
 import { PhoneInbox } from './components/PhoneInbox';
@@ -22,6 +24,7 @@ import { TutorialGuide, type TutorialStep } from './components/TutorialGuide';
 import { CityScene } from './scene/CityScene';
 import { formatYen } from './sim/districts';
 import {
+  advanceToNextBeat,
   auditCharacter,
   auditMessage,
   confrontCharacter,
@@ -46,7 +49,7 @@ import type { DistrictId, DoctrineId, GameState, PayPolicy } from './types/game'
 const SAVE_STORAGE_KEY = 'tokuryu_save_v1';
 const TUTORIAL_DONE_STORAGE_KEY = 'tokuryu_tutorial_done_v1';
 
-type ActiveDrawer = 'ops' | 'phone' | 'crew' | 'network' | null;
+type ActiveDrawer = 'ops' | 'phone' | 'crew' | null;
 
 function formatCompactTitle(title: string): string {
   const clean = title.replace(/^【.*?】/, '');
@@ -93,17 +96,38 @@ export default function App() {
   const [showNetworkArcs, setShowNetworkArcs] = useState<boolean>(true);
   const [muted, setMuted] = useState<boolean>(false);
   const [autoPaused, setAutoPaused] = useState<boolean>(false);
+  const [outcomeToast, setOutcomeToast] = useState<OutcomeToastData | null>(null);
+  const [cashPulseKey, setCashPulseKey] = useState<number>(0);
+  const [tracePulseKey, setTracePulseKey] = useState<number>(0);
 
   const canvasContainerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<CityScene | null>(null);
   const pinElementsRef = useRef<Record<string, HTMLButtonElement | null>>({});
   const savedSpeedBeforeOverlayRef = useRef<0 | 1 | 2 | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+  const toastSeqRef = useRef<number>(1);
   const prevSnapshotRef = useRef<{
     phase: GameState['phase'];
     msgIds: Set<string>;
+    activeOpIds: Set<string>;
     cash: number;
     policeTrace: number;
   } | null>(null);
+
+  const showOutcomeToast = useCallback(
+    (kind: OutcomeToastData['kind'], title: string, detail: string) => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+      const id = toastSeqRef.current++;
+      setOutcomeToast({ id, kind, title, detail });
+      toastTimerRef.current = window.setTimeout(() => {
+        setOutcomeToast((curr) => (curr?.id === id ? null : curr));
+        toastTimerRef.current = null;
+      }, 3200);
+    },
+    []
+  );
 
   // Initialize 3D CityScene once on mount
   useEffect(() => {
@@ -188,12 +212,46 @@ export default function App() {
     }
   }, [overlayOpen, gameState.phase]);
 
-  // Sync audio tension & detect state transitions for automatic SFX
+  // Sync audio tension & detect state transitions for automatic SFX, 3D juice & live outcome toasts
   useEffect(() => {
     soundEngine.setTension(gameState.policeTrace, gameState.phase);
 
     const prev = prevSnapshotRef.current;
     if (prev && gameState.phase !== 'title') {
+      // Detect newly resolved operations (active -> completed / failed / busted)
+      const justResolved = gameState.operations.filter(
+        (o) => prev.activeOpIds.has(o.id) && o.status !== 'active'
+      );
+      if (justResolved.length > 0 && gameState.phase === 'playing') {
+        const op = justResolved[0];
+        const outcome = op.actualOutcome;
+        if (op.status === 'completed') {
+          const shownGain = outcome ? outcome.reportedProfit : Math.max(0, gameState.cash - prev.cash);
+          sceneRef.current?.triggerOutcomeJuice(op.districtId, 'success');
+          showOutcomeToast(
+            'success',
+            `${op.title.slice(0, 14)}${op.title.length > 14 ? '…' : ''} 完了`,
+            `報告収益 +${formatYen(shownGain)}`
+          );
+          setCashPulseKey((k) => k + 1);
+        } else if (op.status === 'busted') {
+          sceneRef.current?.triggerOutcomeJuice(op.districtId, 'busted');
+          showOutcomeToast(
+            'busted',
+            '現場が摘発された！',
+            `${op.title.slice(0, 16)} · T3捜査網上昇`
+          );
+          setTracePulseKey((k) => k + 1);
+        } else {
+          sceneRef.current?.triggerOutcomeJuice(op.districtId, 'alert');
+          showOutcomeToast(
+            'alert',
+            '作戦失敗・撤収',
+            outcome?.summary ?? op.title
+          );
+        }
+      }
+
       // Detect newly arrived messages
       const newlyArrived = gameState.messages.filter((m) => !prev.msgIds.has(m.id));
       if (newlyArrived.length > 0 && gameState.phase === 'playing') {
@@ -216,24 +274,34 @@ export default function App() {
         }
       }
 
-      // Large cash jump from completed op
+      // Large cash jump from completed op or reclaim
       if (gameState.cash > prev.cash + 150_000 && gameState.phase === 'playing') {
         soundEngine.playCash(true);
+        if (justResolved.length === 0) {
+          setCashPulseKey((k) => k + 1);
+        }
       }
 
       // Sudden police trace spike
-      if (gameState.policeTrace - prev.policeTrace >= 10) {
+      if (gameState.policeTrace - prev.policeTrace >= 8) {
         soundEngine.playAlert();
+        setTracePulseKey((k) => k + 1);
+        if (justResolved.length === 0) {
+          sceneRef.current?.triggerOutcomeJuice(null, 'alert');
+        }
       }
     }
 
     prevSnapshotRef.current = {
       phase: gameState.phase,
       msgIds: new Set(gameState.messages.map((m) => m.id)),
+      activeOpIds: new Set(
+        gameState.operations.filter((o) => o.status === 'active').map((o) => o.id)
+      ),
       cash: gameState.cash,
       policeTrace: gameState.policeTrace,
     };
-  }, [gameState]);
+  }, [gameState, showOutcomeToast]);
 
   // Auto-save progress to localStorage (throttled: immediate on key structural changes, else >=2000ms)
   const lastSavedAtRef = useRef<number>(0);
@@ -414,6 +482,7 @@ export default function App() {
     prevSnapshotRef.current = {
       phase: next.phase,
       msgIds: new Set(next.messages.map((m) => m.id)),
+      activeOpIds: new Set(),
       cash: next.cash,
       policeTrace: next.policeTrace,
     };
@@ -424,6 +493,7 @@ export default function App() {
     setSelectedDistrict(null);
     setSelectedOpId(null);
     setFocusedMessageId(null);
+    setOutcomeToast(null);
     sceneRef.current?.resetCamera();
   }, []);
 
@@ -438,6 +508,9 @@ export default function App() {
     prevSnapshotRef.current = {
       phase: saved.phase,
       msgIds: new Set(saved.messages.map((m) => m.id)),
+      activeOpIds: new Set(
+        saved.operations.filter((o) => o.status === 'active').map((o) => o.id)
+      ),
       cash: saved.cash,
       policeTrace: saved.policeTrace,
     };
@@ -448,6 +521,7 @@ export default function App() {
     setActiveDrawer(null);
     setSelectedDistrict(null);
     setSelectedOpId(null);
+    setOutcomeToast(null);
   }, []);
 
   const handleDispatch = useCallback(
@@ -458,6 +532,14 @@ export default function App() {
         if (next !== curr) {
           dispatchedOk = true;
           soundEngine.playDispatch();
+          const op = next.operations.find((o) => o.id === opId);
+          const lead = next.characters.find((c) => c.id === leadId);
+          if (op) {
+            sceneRef.current?.triggerDispatchJuice(
+              op.districtId,
+              lead?.tier === 'coordinator'
+            );
+          }
           const resumeSpeed = savedSpeedBeforeOverlayRef.current ?? 1;
           savedSpeedBeforeOverlayRef.current = null;
           setAutoPaused(false);
@@ -475,6 +557,12 @@ export default function App() {
     },
     [tutorialStep]
   );
+
+  const handleAdvanceBeat = useCallback(() => {
+    soundEngine.unlock();
+    soundEngine.playClick();
+    setGameState((curr) => advanceToNextBeat(curr));
+  }, []);
 
   const handleAuditMessage = useCallback((msgId: string) => {
     setGameState((curr) => {
@@ -653,7 +741,7 @@ export default function App() {
   const showFloatingPins =
     gameState.phase === 'playing' &&
     !howToPlayOpen &&
-    activeDrawer !== 'network';
+    activeDrawer === null;
 
   // Sync floating map operation pins directly via DOM transforms (ZERO 60fps React re-renders)
   useEffect(() => {
@@ -798,6 +886,8 @@ export default function App() {
             muted={muted}
             highlightSkipToEvening={tutorialStep === 2}
             autoPaused={autoPaused}
+            cashPulseKey={cashPulseKey}
+            tracePulseKey={tracePulseKey}
             onSetSpeed={(spd) => {
               soundEngine.playClick();
               savedSpeedBeforeOverlayRef.current = null;
@@ -1001,44 +1091,55 @@ export default function App() {
             )}
           </div>
 
-          {/* Bottom Stack: Interactive Day-1 Radio Guide + Live News Ticker + Tactical Dock */}
+          {/* Bottom Stack: Pre-Bottom Row (Guide Left + Live CTA Right on PC) + News Ticker + 3-Tab Tactical Dock */}
           <div className="hud-bottom-stack">
-            {tutorialStep !== null &&
-              gameState.phase !== 'ended' &&
-              !(gameState.phase === 'evening' && activeDrawer === null) &&
-              activeDrawer !== 'network' && (
-                <TutorialGuide
-                  step={tutorialStep}
-                  onPrevStep={() => {
+            <div className="hud-pre-bottom-row">
+              <div className="hud-pre-bottom-left">
+                {tutorialStep !== null &&
+                  gameState.phase !== 'ended' &&
+                  !(gameState.phase === 'evening' && activeDrawer === null) && (
+                    <TutorialGuide
+                      step={tutorialStep}
+                      onPrevStep={() => {
+                        soundEngine.playClick();
+                        setTutorialStep((prev) =>
+                          prev === null ? 1 : prev > 1 ? ((prev - 1) as TutorialStep) : 1
+                        );
+                      }}
+                      onAdvanceStep={() => {
+                        soundEngine.playClick();
+                        setTutorialStep((prev) =>
+                          prev === null ? null : prev < 4 ? ((prev + 1) as TutorialStep) : null
+                        );
+                      }}
+                      onDismiss={dismissTutorial}
+                    />
+                  )}
+              </div>
+
+              {activeDrawer === null && gameState.phase === 'playing' && (
+                <LiveActionOverlay
+                  state={gameState}
+                  outcomeToast={outcomeToast}
+                  onOpenOps={() => {
                     soundEngine.playClick();
-                    setTutorialStep((prev) =>
-                      prev === null ? 1 : prev > 1 ? ((prev - 1) as TutorialStep) : 1
-                    );
+                    setSelectedOpId(null);
+                    setActiveDrawer('ops');
                   }}
-                  onAdvanceStep={() => {
+                  onAdvanceBeat={handleAdvanceBeat}
+                  onSkipToEvening={() => {
                     soundEngine.playClick();
-                    setTutorialStep((prev) =>
-                      prev === null ? null : prev < 4 ? ((prev + 1) as TutorialStep) : null
-                    );
+                    setGameState((curr) => skipToEvening(curr));
                   }}
-                  onDismiss={dismissTutorial}
+                  onOpenMessage={(msgId) => {
+                    soundEngine.playClick();
+                    setFocusedMessageId(msgId);
+                    setActiveDrawer('phone');
+                    setGameState((curr) => markMessageRead(curr, msgId));
+                  }}
                 />
               )}
-
-            {tutorialStep === null &&
-              gameState.phase === 'playing' &&
-              activeDrawer === null && (
-                <button
-                  type="button"
-                  className="tutorial-reopen-chip interactive"
-                  onClick={reopenTutorial}
-                  data-testid="tutorial-reopen-chip"
-                  title="ミサキの操作ナビを再表示"
-                >
-                  <span className="tutorial-comms-pulse" aria-hidden="true" />
-                  <span>ミサキの操作ナビを表示</span>
-                </button>
-              )}
+            </div>
 
             <div className="hud-bottom">
               <NewsTicker
@@ -1058,7 +1159,7 @@ export default function App() {
                 }}
               />
 
-              <nav className="tactical-dock interactive" aria-label="戦術コマンドドック">
+              <nav className="tactical-dock tactical-dock-3 interactive" aria-label="戦術コマンドドック">
                 <button
                   type="button"
                   className={`dock-btn${activeDrawer === 'ops' ? ' active' : ''}${
@@ -1111,23 +1212,10 @@ export default function App() {
                   }}
                 >
                   <CrewIcon size={16} />
-                  <span>人員・委任</span>
+                  <span>組織・相関</span>
                   {foggedCrewCount > 0 && (
                     <span className="dock-badge">{foggedCrewCount}</span>
                   )}
-                </button>
-
-                <button
-                  type="button"
-                  className={`dock-btn${activeDrawer === 'network' ? ' active' : ''}`}
-                  onMouseEnter={() => soundEngine.playHover()}
-                  onClick={() => {
-                    soundEngine.playClick();
-                    setActiveDrawer((d) => (d === 'network' ? null : 'network'));
-                  }}
-                >
-                  <NetworkNodesIcon size={16} />
-                  <span>関係網</span>
                 </button>
               </nav>
             </div>
@@ -1147,17 +1235,6 @@ export default function App() {
               ? reopenTutorial
               : undefined
           }
-        />
-      )}
-
-      {/* Network Graph Modal */}
-      {activeDrawer === 'network' && gameState.phase !== 'title' && (
-        <NetworkGraphModal
-          characters={gameState.characters}
-          onClose={() => {
-            soundEngine.playClick();
-            setActiveDrawer(null);
-          }}
         />
       )}
 

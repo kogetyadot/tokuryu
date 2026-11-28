@@ -25,6 +25,8 @@ interface TopHudProps {
   muted: boolean;
   highlightSkipToEvening?: boolean;
   autoPaused?: boolean;
+  cashPulseKey?: number;
+  tracePulseKey?: number;
   onSetSpeed: (speed: 0 | 1 | 2) => void;
   onSkipToEvening: () => void;
   onToggleNetworkArcs: () => void;
@@ -47,6 +49,8 @@ export const TopHud: React.FC<TopHudProps> = ({
   muted,
   highlightSkipToEvening = false,
   autoPaused = false,
+  cashPulseKey = 0,
+  tracePulseKey = 0,
   onSetSpeed,
   onSkipToEvening,
   onToggleNetworkArcs,
@@ -224,12 +228,31 @@ export const TopHud: React.FC<TopHudProps> = ({
                 type="button"
                 className="hud-overflow-item"
                 onClick={() => {
+                  openTerm('city_harm');
+                  setMenuOpen(false);
+                }}
+              >
+                <HarmSkullIcon size={14} />
+                <span>
+                  街の社会被害:{' '}
+                  <strong
+                    className="mono-num"
+                    style={{ color: harmHigh ? '#f4a261' : 'var(--cream)' }}
+                  >
+                    {Math.round(state.cityHarm)}%
+                  </strong>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="hud-overflow-item"
+                onClick={() => {
                   onOpenHowToPlay();
                   setMenuOpen(false);
                 }}
               >
                 <HelpIcon size={14} />
-                <span>遊び方・操作ナビ</span>
+                <span>遊び方・仕組み補足</span>
               </button>
               <button
                 type="button"
@@ -282,20 +305,20 @@ export const TopHud: React.FC<TopHudProps> = ({
         </div>
       </div>
 
-      {/* Row 2 on Mobile (Ultra-Slim 1-Row Strip) / Center Cluster on Desktop */}
-      <div className="hud-meters-cluster">
-        {/* 裏資金 */}
+      {/* Focused 3-Pillar Core Meters (Earn / Evade / Control) */}
+      <div className="hud-meters-cluster hud-meters-3">
+        {/* 1. 裏資金 (Win) */}
         <button
+          key={`cash-${cashPulseKey}`}
           type="button"
-          className="hud-meter hud-meter-btn"
+          className={`hud-meter hud-meter-btn${cashPulseKey > 0 ? ' meter-punch-amber' : ''}`}
           onClick={() => openTerm('cash')}
           title={`裏資金の解説を見る（目標: ${formatYen(state.targetCash)}）`}
         >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
               <YenIcon size={11} />
-              <span className="hide-mobile">裏資金</span>
-              <span className="show-mobile-only">資金</span>
+              <span>裏資金</span>
               <span className="hud-meter-q hide-mobile" aria-hidden="true">?</span>
             </span>
             <span
@@ -314,42 +337,13 @@ export const TopHud: React.FC<TopHudProps> = ({
           </div>
         </button>
 
-        {/* 統制力 */}
+        {/* 2. T3捜査網 (Threat) */}
         <button
+          key={`trace-${tracePulseKey}`}
           type="button"
-          className={`hud-meter hud-meter-btn${controlLow ? ' danger-pulse' : ''}`}
-          onClick={() => openTerm('control')}
-          title="統制力の解説を見る"
-        >
-          <div className="hud-meter-top">
-            <span className="hud-meter-label">
-              <ControlScaleIcon size={11} />
-              <span className="hide-mobile">統制力</span>
-              <span className="show-mobile-only">統制</span>
-              <span className="hud-meter-q hide-mobile" aria-hidden="true">?</span>
-            </span>
-            <span
-              className="hud-meter-val"
-              style={{ color: controlLow ? 'var(--crimson-bright)' : 'var(--teal-bright)' }}
-            >
-              {Math.round(state.control)}%
-            </span>
-          </div>
-          <div className="hud-meter-bar">
-            <div
-              className="hud-meter-fill"
-              style={{
-                width: `${Math.min(100, Math.max(0, state.control))}%`,
-                background: controlLow ? 'var(--crimson)' : 'var(--teal)',
-              }}
-            />
-          </div>
-        </button>
-
-        {/* T3捜査網 */}
-        <button
-          type="button"
-          className={`hud-meter hud-meter-btn${traceDanger ? ' danger-pulse' : ''}`}
+          className={`hud-meter hud-meter-btn${traceDanger ? ' danger-pulse' : ''}${
+            tracePulseKey > 0 ? ' meter-punch-crimson' : ''
+          }`}
           onClick={() => openTerm('t3_trace')}
           title="T3捜査網の解説を見る"
         >
@@ -357,7 +351,7 @@ export const TopHud: React.FC<TopHudProps> = ({
             <span className="hud-meter-label">
               <SirenIcon size={11} />
               <span className="hide-mobile">T3捜査網</span>
-              <span className="show-mobile-only">捜査</span>
+              <span className="show-mobile-only">捜査網</span>
               <span className="hud-meter-q hide-mobile" aria-hidden="true">?</span>
             </span>
             <span
@@ -378,33 +372,32 @@ export const TopHud: React.FC<TopHudProps> = ({
           </div>
         </button>
 
-        {/* 社会被害 */}
+        {/* 3. 統制力 (Stability) */}
         <button
           type="button"
-          className="hud-meter hud-meter-btn"
-          onClick={() => openTerm('city_harm')}
-          title="社会被害の解説を見る"
+          className={`hud-meter hud-meter-btn${controlLow ? ' danger-pulse' : ''}`}
+          onClick={() => openTerm('control')}
+          title="統制力の解説を見る"
         >
           <div className="hud-meter-top">
             <span className="hud-meter-label">
-              <HarmSkullIcon size={11} />
-              <span className="hide-mobile">社会被害</span>
-              <span className="show-mobile-only">被害</span>
+              <ControlScaleIcon size={11} />
+              <span>統制力</span>
               <span className="hud-meter-q hide-mobile" aria-hidden="true">?</span>
             </span>
             <span
               className="hud-meter-val"
-              style={{ color: harmHigh ? '#f4a261' : 'var(--cream)' }}
+              style={{ color: controlLow ? 'var(--crimson-bright)' : 'var(--teal-bright)' }}
             >
-              {Math.round(state.cityHarm)}%
+              {Math.round(state.control)}%
             </span>
           </div>
           <div className="hud-meter-bar">
             <div
               className="hud-meter-fill"
               style={{
-                width: `${Math.min(100, Math.max(0, state.cityHarm))}%`,
-                background: harmHigh ? '#f4a261' : 'rgba(241, 237, 228, 0.55)',
+                width: `${Math.min(100, Math.max(0, state.control))}%`,
+                background: controlLow ? 'var(--crimson)' : 'var(--teal)',
               }}
             />
           </div>

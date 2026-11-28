@@ -4,6 +4,7 @@ import { createFluidRecruit, createInitialCharacters } from '../characters';
 import { generateOperationsForDay } from '../operations';
 import { evaluateEnding } from '../endings';
 import {
+  advanceToNextBeat,
   auditCharacter,
   auditMessage,
   confrontCharacter,
@@ -128,9 +129,9 @@ describe('TOKURYU Simulation Engine', () => {
       expect(state.operations[2].assignedSubId).toBe(fluidSub.id);
       expect(state.characters.find((c) => c.id === fluidSub.id)?.status).toBe('on_mission');
 
-      // Tick simulation forward smoothly (1x = 0.45 hr/sec)
+      // Tick simulation forward smoothly (1x = 0.55 hr/sec)
       state = tickSimulation(state, 4);
-      expect(state.hour).toBeCloseTo(9.8, 4);
+      expect(state.hour).toBeCloseTo(10.2, 4);
       expect(state.operations[0].progress).toBeGreaterThan(0);
 
       // Pause speed should freeze progression
@@ -674,6 +675,25 @@ describe('TOKURYU Simulation Engine', () => {
       expect(day3.day).toBe(3);
       expect(day3.messages.some((m) => m.id === 'msg_phase2_day3')).toBe(true);
     });
+
+    it('advanceToNextBeat jumps directly to earliest active operation completion or evening when idle', () => {
+      let state = startNewGame('ghost_architect');
+      const avail = state.operations.find((o) => o.status === 'available')!;
+      state = dispatchOperation(state, avail.id, 'ken', null, 'fair');
+      expect(state.operations.find((o) => o.id === avail.id)?.status).toBe('active');
+
+      // Jumps straight to the completion of that active op without waiting
+      const afterOp = advanceToNextBeat(state);
+      const resolved = afterOp.operations.find((o) => o.id === avail.id)!;
+      expect(resolved.status).not.toBe('active');
+      expect(afterOp.phase).toBe('playing');
+
+      // When no active ops remain, jumps cleanly to evening settlement
+      const evening = advanceToNextBeat(afterOp);
+      expect(evening.phase).toBe('evening');
+      expect(evening.hour).toBeGreaterThanOrEqual(22);
+    });
   });
 });
+
 

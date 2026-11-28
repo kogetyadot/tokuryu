@@ -1010,9 +1010,38 @@ export function tickSimulation(state: GameState, dtSeconds: number): GameState {
   if (state.phase !== 'playing' || state.speed === 0 || dtSeconds <= 0) {
     return state;
   }
-  const hoursPerSecond = state.speed === 2 ? 0.9 : 0.45;
+  const hoursPerSecond = state.speed === 2 ? 1.25 : 0.55;
   const dtHours = dtSeconds * hoursPerSecond;
   return advanceTimeByHours(state, dtHours);
+}
+
+/**
+ * Jumps cleanly to the next meaningful gameplay beat:
+ * - If operations are active, advances directly to the earliest operation completion (or 22:00 evening).
+ * - If no operation is active, advances to 22:00 evening settlement.
+ * Eliminates idle waiting time between tactical decisions.
+ */
+export function advanceToNextBeat(state: GameState): GameState {
+  if (state.phase !== 'playing') return state;
+  const remainingDayHours = Math.max(0, 22.0 - state.hour);
+  if (remainingDayHours === 0) {
+    return settleEvening(state);
+  }
+
+  const activeOps = state.operations.filter((o) => o.status === 'active');
+  if (activeOps.length === 0) {
+    return advanceTimeByHours(state, remainingDayHours);
+  }
+
+  let minHoursToComplete = remainingDayHours;
+  for (const op of activeOps) {
+    const hrsLeft = Math.max(0.05, (1 - op.progress) * op.durationHours + 0.01);
+    if (hrsLeft < minHoursToComplete) {
+      minHoursToComplete = hrsLeft;
+    }
+  }
+
+  return advanceTimeByHours(state, Math.min(remainingDayHours, minHoursToComplete));
 }
 
 export function skipToEvening(state: GameState): GameState {

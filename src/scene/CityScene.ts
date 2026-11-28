@@ -83,6 +83,19 @@ export class CityScene {
   private elapsedTime = 0;
   private disposed = false;
 
+  // Game Feel state (trauma shake, FOV kick, expanding 3D district pulse rings)
+  private readonly baseFov = 42;
+  private fovPunch = 0;
+  private shakeTrauma = 0;
+  private pulseRingGeo: THREE.RingGeometry | null = null;
+  private pulseRings: {
+    mesh: THREE.Mesh;
+    mat: THREE.MeshBasicMaterial;
+    age: number;
+    duration: number;
+    maxScale: number;
+  }[] = [];
+
   constructor(container: HTMLElement, callbacks: SceneCallbacks) {
     this.container = container;
     this.callbacks = callbacks;
@@ -204,6 +217,59 @@ export class CityScene {
     this.thetaGoal = DEFAULT_CAMERA.theta;
     this.phiGoal = DEFAULT_CAMERA.phi;
     this.radiusGoal = DEFAULT_CAMERA.radius;
+  }
+
+  public triggerDispatchJuice(districtId: DistrictId, isDelegated: boolean): void {
+    this.focusDistrict(districtId);
+    this.fovPunch = Math.min(8, this.fovPunch + 3.0);
+    this.shakeTrauma = Math.min(1, this.shakeTrauma + 0.12);
+    this.spawnPulseRing(districtId, isDelegated ? '#2ec4b6' : '#f0a500', 8.5, 0.85);
+  }
+
+  public triggerOutcomeJuice(
+    districtId: DistrictId | null,
+    kind: 'success' | 'busted' | 'alert'
+  ): void {
+    const color =
+      kind === 'success' ? '#f5b82e' : kind === 'busted' ? '#ef4444' : '#fb7185';
+    const trauma = kind === 'success' ? 0.16 : kind === 'busted' ? 0.42 : 0.3;
+    const fov = kind === 'success' ? 2.4 : 4.2;
+
+    this.fovPunch = Math.min(8, this.fovPunch + fov);
+    this.shakeTrauma = Math.min(1, this.shakeTrauma + trauma);
+    if (districtId) {
+      this.spawnPulseRing(districtId, color, kind === 'success' ? 11 : 12.5, 1.0);
+    }
+  }
+
+  private spawnPulseRing(
+    districtId: DistrictId,
+    colorHex: string,
+    maxScale: number,
+    duration: number
+  ): void {
+    const center = DISTRICT_CENTERS[districtId];
+    if (!center || this.disposed) return;
+
+    if (!this.pulseRingGeo) {
+      this.pulseRingGeo = new THREE.RingGeometry(0.76, 1.0, 32);
+      this.pulseRingGeo.rotateX(-Math.PI / 2);
+    }
+
+    const mat = new THREE.MeshBasicMaterial({
+      color: colorHex,
+      transparent: true,
+      opacity: 0.9,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+
+    const mesh = new THREE.Mesh(this.pulseRingGeo, mat);
+    mesh.position.set(center[0], 0.45, center[1]);
+    mesh.scale.setScalar(1.2);
+    this.scene.add(mesh);
+    this.pulseRings.push({ mesh, mat, age: 0, duration, maxScale });
   }
 
   private projVec = new THREE.Vector3();
@@ -516,6 +582,38 @@ export class CityScene {
     this.radiusCurrent = THREE.MathUtils.lerp(this.radiusCurrent, this.radiusGoal, damp);
     this.updateCameraTransform();
 
+    // Trauma-based screenshake (trauma^2 curve) & FOV kick decay
+    if (this.shakeTrauma > 0.001) {
+      this.shakeTrauma = Math.max(0, this.shakeTrauma - 1.5 * dt);
+      const shake = this.shakeTrauma * this.shakeTrauma;
+      const freq = this.elapsedTime * 34;
+      const nx = Math.sin(freq * 1.13 + 1.7) * 0.5 + Math.cos(freq * 2.31) * 0.5;
+      const ny = Math.sin(freq * 1.47 + 4.2) * 0.5 + Math.cos(freq * 1.93) * 0.5;
+      this.camera.position.x += nx * 0.85 * shake;
+      this.camera.position.y += ny * 0.65 * shake;
+    }
+    if (this.fovPunch > 0.01) {
+      this.fovPunch *= Math.exp(-dt / 0.22);
+      if (this.fovPunch < 0.01) this.fovPunch = 0;
+      this.camera.fov = this.baseFov + this.fovPunch;
+      this.camera.updateProjectionMatrix();
+    }
+
+    // Update expanding 3D district pulse rings
+    for (let i = this.pulseRings.length - 1; i >= 0; i--) {
+      const r = this.pulseRings[i];
+      r.age += dt;
+      const k = Math.min(1, r.age / r.duration);
+      const easeOut = 1 - Math.pow(1 - k, 3);
+      r.mesh.scale.setScalar(1.2 + easeOut * r.maxScale);
+      r.mat.opacity = 0.88 * (1 - k);
+      if (k >= 1) {
+        this.scene.remove(r.mesh);
+        r.mat.dispose();
+        this.pulseRings.splice(i, 1);
+      }
+    }
+
     if (this.latestState && this.city && this.effects) {
       this.effects.update(dt, this.elapsedTime, this.latestState, this.city);
       this.city.updateDistrictVisuals(
@@ -552,6 +650,14 @@ export class CityScene {
     if (this.isLowGpu) {
       document.documentElement.classList.remove('low-gpu');
     }
+
+    for (const r of this.pulseRings) {
+      this.scene.remove(r.mesh);
+      r.mat.dispose();
+    }
+    this.pulseRings = [];
+    this.pulseRingGeo?.dispose();
+    this.pulseRingGeo = null;
 
     this.city?.dispose();
     this.traffic?.dispose();
